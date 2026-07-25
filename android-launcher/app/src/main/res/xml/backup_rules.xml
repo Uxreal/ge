@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="file" path="lumen/" />
+    <include domain="file" path="datastore/" />
+    <exclude domain="file" path="lumen/icon-cache/" />
+</full-backup-content>

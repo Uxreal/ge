@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glass lens body: a squircle droplet. -->
+    <path
+        android:pathData="M54,26c-13.8,0 -25,11.2 -25,25c0,9.9 5.7,18.4 14,22.5c3.7,1.8 6.2,5.3 6.9,9.3c0.3,1.9 1.9,3.2 3.8,3.2h0.6c1.9,0 3.5,-1.3 3.8,-3.2c0.7,-4 3.2,-7.5 6.9,-9.3c8.3,-4.1 14,-12.6 14,-22.5C79,37.2 67.8,26 54,26z">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+            <gradient
+                android:startX="30"
+                android:startY="26"
+                android:endX="78"
+                android:endY="86"
+                android:type="linear">
+                <item android:offset="0" android:color="#EEFFFFFF" />
+                <item android:offset="0.5" android:color="#66C9E4FF" />
+                <item android:offset="1" android:color="#88A78BFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Specular highlight. -->
+    <path
+        android:pathData="M44,38c-4.4,2.6 -7.6,6.9 -8.7,11.9c-0.4,1.7 1.6,3 2.8,1.7c3.2,-3.4 7.2,-6.1 11.6,-7.7c1.6,-0.6 1.6,-2.9 0,-3.5C47.9,39.6 45.9,38.8 44,38z"
+        android:fillColor="#F2FFFFFF" />
+
+    <!-- Refracted rim. -->
+    <path
+        android:pathData="M54,30c-11.6,0 -21,9.4 -21,21c0,8.3 4.8,15.5 11.8,18.9l1.7,-3.6C40.6,63.5 36.6,57.7 36.6,51c0,-9.6 7.8,-17.4 17.4,-17.4c9.6,0 17.4,7.8 17.4,17.4c0,6.7 -3.8,12.5 -9.4,15.3l1.7,3.6C70.3,66.5 75,59.3 75,51C75,39.4 65.6,30 54,30z"
+        android:fillColor="#59FFFFFF" />
+</vector>
