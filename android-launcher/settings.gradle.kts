@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google {
             content {
@@ -21,4 +22,12 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Lumen"
+
 include(":app")
+include(":core:design")
+include(":core:data")
+include(":feature:home")
+include(":feature:drawer")
+include(":feature:widgets")
+include(":feature:settings")
+include(":benchmark")
