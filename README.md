@@ -1,3 +1,7 @@
+> **This repo builds two apps.** Vira (documented below) is served at `/`. **Reel**, a web media
+> player for HLS/DASH/progressive streams with a library of free public-domain film, is served at
+> `/player` — see **[PLAYER.md](PLAYER.md)**.
+
 # Vira — AI Content Operating System
 
 Vira is a design-system prototype for an AI-powered short-form content factory: a single operator manages
