@@ -165,7 +165,9 @@ fun IconBitmap(key: AppKey, size: Dp, modifier: Modifier = Modifier) {
         modifier = modifier
             .size(size)
             .drawWithCache {
-                val tilePath = LauncherShapes.iconPath(shape, size, cornerPercent, smoothing)
+                // `size` here is the Dp parameter, so the pixel geometry is taken explicitly.
+                val geometry = this.size
+                val tilePath = LauncherShapes.iconPath(shape, geometry, cornerPercent, smoothing)
                 onDrawBehind {
                     if (glassTile) {
                         drawPath(
@@ -174,7 +176,7 @@ fun IconBitmap(key: AppKey, size: Dp, modifier: Modifier = Modifier) {
                                 0f to Color.White.copy(alpha = 0.22f * tileAlpha),
                                 1f to Color.White.copy(alpha = 0.06f * tileAlpha),
                                 start = Offset.Zero,
-                                end = Offset(size.width, size.height),
+                                end = Offset(geometry.width, geometry.height),
                             ),
                         )
                         drawPath(
@@ -184,15 +186,15 @@ fun IconBitmap(key: AppKey, size: Dp, modifier: Modifier = Modifier) {
                         )
                     }
                     if (image != null) {
-                        val inset = if (glassTile) size.width * 0.12f else 0f
+                        val inset = if (glassTile) geometry.width * 0.12f else 0f
                         drawImage(
                             image = image,
                             srcOffset = IntOffset.Zero,
                             srcSize = IntSize(image.width, image.height),
                             dstOffset = IntOffset(inset.roundToInt(), inset.roundToInt()),
                             dstSize = IntSize(
-                                (size.width - inset * 2f).roundToInt().coerceAtLeast(1),
-                                (size.height - inset * 2f).roundToInt().coerceAtLeast(1),
+                                (geometry.width - inset * 2f).roundToInt().coerceAtLeast(1),
+                                (geometry.height - inset * 2f).roundToInt().coerceAtLeast(1),
                             ),
                         )
                     }

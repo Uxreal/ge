@@ -21,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.IntOffset
@@ -166,10 +165,16 @@ fun WallpaperLayer(
                             if (source == WallpaperSource.LIQUID_MESH) {
                                 shader.setColorUniform("uC3", palette[3].toArgbInt())
                             }
-                            // Parallax by drawing the field slightly oversized and sliding it.
+                            // Parallax slides the field; the rect is inflated by the slide distance
+                            // so nothing is left unpainted at the trailing edge.
                             val slide = parallaxFraction * size.width * wallpaper.parallaxDepth * 0.25f
+                            val inflate = kotlin.math.abs(slide) + 1f
                             translate(left = -slide) {
-                                drawRect(ShaderBrush(shader), size = size.copy(width = size.width))
+                                drawRect(
+                                    brush = ShaderBrush(shader),
+                                    topLeft = Offset(-inflate, 0f),
+                                    size = Size(size.width + inflate * 2f, size.height),
+                                )
                             }
                         } else {
                             drawFallbackGradient(palette, baseColor, time)
@@ -255,5 +260,3 @@ private fun DrawScope.drawFallbackGradient(palette: List<Color>, base: Color, ti
         )
     }
 }
-
-private fun Size.copy(width: Float = this.width, height: Float = this.height) = Size(width, height)

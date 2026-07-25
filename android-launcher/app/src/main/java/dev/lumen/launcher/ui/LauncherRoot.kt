@@ -15,6 +15,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lumen.launcher.data.LauncherServices
 import dev.lumen.launcher.data.LocalLauncherActivity
@@ -23,6 +24,7 @@ import dev.lumen.launcher.data.model.Cell
 import dev.lumen.launcher.data.model.ItemContainer
 import dev.lumen.launcher.data.model.WidgetItem
 import dev.lumen.launcher.data.model.WidgetProviderInfo
+import dev.lumen.launcher.data.prefs.LauncherSettings
 import dev.lumen.launcher.data.workspace.WorkspaceOps
 import dev.lumen.launcher.ui.common.LocalHaptics
 import dev.lumen.launcher.ui.common.rememberHaptics
@@ -126,6 +128,9 @@ fun LauncherRoot(
                 backdrop.setContinuous("drag", dragState.isDragging)
             }
 
+            // Hoisted out of the widget-picker callback: it reads configuration and density.
+            val approximateCell = approximateCellSize(settings)
+
             CompositionLocalProvider(LocalHaptics provides haptics) {
                 BackHandler(enabled = true) { controller.onBack() }
 
@@ -158,7 +163,7 @@ fun LauncherRoot(
                         is LauncherOverlay.WidgetPicker -> WidgetPickerSheet(
                             onDismiss = { controller.closeOverlay() },
                             onPicked = { appWidgetId, provider ->
-                                placeWidget(controller, provider, appWidgetId, cellSize(settings))
+                                placeWidget(controller, provider, appWidgetId, approximateCell)
                                 controller.closeOverlay()
                             },
                         )
@@ -190,14 +195,15 @@ fun LauncherRoot(
     }
 }
 
-/** Rough cell size, used only to pick a sensible initial widget span. */
+/** Rough cell size in pixels, used only to pick a sensible initial span for a new widget. */
 @Composable
-private fun cellSize(settings: dev.lumen.launcher.data.prefs.LauncherSettings): Pair<Int, Int> {
+private fun approximateCellSize(settings: LauncherSettings): Pair<Int, Int> {
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
-    return remember(configuration, settings.grid.columns, settings.grid.rows) {
+    return remember(configuration, density, settings.grid.columns, settings.grid.rows) {
         with(density) {
             val width = configuration.screenWidthDp.dp.toPx() / settings.grid.columns.coerceAtLeast(1)
+            // The workspace occupies roughly the screen minus status bar, dock and indicator.
             val height = (configuration.screenHeightDp.dp.toPx() * 0.72f) /
                 settings.grid.rows.coerceAtLeast(1)
             width.toInt() to height.toInt()
@@ -243,5 +249,3 @@ private fun placeWidget(
         }
     }
 }
-
-private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())

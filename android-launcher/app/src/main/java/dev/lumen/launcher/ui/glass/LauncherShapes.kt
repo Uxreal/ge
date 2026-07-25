@@ -1,11 +1,11 @@
 package dev.lumen.launcher.ui.glass
 
+import androidx.compose.foundation.shape.CornerBasedShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import dev.lumen.launcher.data.prefs.IconShape
@@ -13,6 +13,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -37,31 +38,59 @@ object LauncherShapes {
         radius: Float,
         smoothing: Float,
         segmentsPerCorner: Int = 16,
+    ): Path = squirclePath(
+        size = size,
+        topLeft = radius,
+        topRight = radius,
+        bottomRight = radius,
+        bottomLeft = radius,
+        smoothing = smoothing,
+        segmentsPerCorner = segmentsPerCorner,
+    )
+
+    /**
+     * Per-corner variant, which is what lets the Material shape scale (sheets with only the top
+     * corners rounded, and so on) share the launcher's curvature.
+     */
+    fun squirclePath(
+        size: Size,
+        topLeft: Float,
+        topRight: Float,
+        bottomRight: Float,
+        bottomLeft: Float,
+        smoothing: Float,
+        segmentsPerCorner: Int = 16,
     ): Path {
         val path = Path()
         val w = size.width
         val h = size.height
         if (w <= 0f || h <= 0f) return path
 
-        val r = radius.coerceIn(0f, minOf(w, h) / 2f)
-        if (r <= 0.01f) {
+        val limit = minOf(w, h) / 2f
+        val tl = topLeft.coerceIn(0f, limit)
+        val tr = topRight.coerceIn(0f, limit)
+        val br = bottomRight.coerceIn(0f, limit)
+        val bl = bottomLeft.coerceIn(0f, limit)
+
+        if (tl <= 0.01f && tr <= 0.01f && br <= 0.01f && bl <= 0.01f) {
             path.addRect(androidx.compose.ui.geometry.Rect(0f, 0f, w, h))
             path.close()
             return path
         }
+
         val n = exponent(smoothing)
         val inv = 2f / n
 
-        // Corner centres, walked clockwise from the top-right.
-        val centres = arrayOf(
-            Offset(w - r, r) to 0,      // top-right     : angles  -90°..0°
-            Offset(w - r, h - r) to 1,  // bottom-right  : angles    0°..90°
-            Offset(r, h - r) to 2,      // bottom-left   : angles   90°..180°
-            Offset(r, r) to 3,          // top-left      : angles  180°..270°
+        // Corner centre and radius, walked clockwise from the top-right.
+        val corners = listOf(
+            Triple(Offset(w - tr, tr), tr, 0),      // top-right    : -90°..0°
+            Triple(Offset(w - br, h - br), br, 1),  // bottom-right :   0°..90°
+            Triple(Offset(bl, h - bl), bl, 2),      // bottom-left  :  90°..180°
+            Triple(Offset(tl, tl), tl, 3),          // top-left     : 180°..270°
         )
 
         var started = false
-        for ((centre, quadrant) in centres) {
+        for ((centre, r, quadrant) in corners) {
             for (i in 0..segmentsPerCorner) {
                 val t = i.toFloat() / segmentsPerCorner
                 val angle = (-PI / 2 + quadrant * PI / 2 + t * PI / 2).toFloat()
@@ -162,24 +191,62 @@ object LauncherShapes {
         return path
     }
 
-    /** A [Shape] with superellipse corners of a fixed radius. */
-    fun squircle(radius: Dp, smoothing: Float = 0.72f): Shape = SquircleShape(radius, smoothing)
+    /** A shape with superellipse corners of a fixed radius. */
+    fun squircle(radius: Dp, smoothing: Float = 0.72f): CornerBasedShape =
+        SquircleCornerShape(CornerSize(radius), smoothing)
 
-    /** A [Shape] whose corner radius is a fraction of its shortest side. */
-    fun squirclePercent(percent: Float, smoothing: Float = 0.72f): Shape =
-        SquirclePercentShape(percent, smoothing)
-}
-
-private class SquircleShape(private val radius: Dp, private val smoothing: Float) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
-        Outline.Generic(
-            LauncherShapes.squirclePath(size, with(density) { radius.toPx() }, smoothing),
+    /** A shape whose corner radius is a fraction of its shortest side. */
+    fun squirclePercent(percent: Float, smoothing: Float = 0.72f): CornerBasedShape =
+        SquircleCornerShape(
+            CornerSize((percent.coerceIn(0f, 0.5f) * 100f).roundToInt()),
+            smoothing,
         )
 }
 
-private class SquirclePercentShape(private val percent: Float, private val smoothing: Float) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
-        Outline.Generic(
-            LauncherShapes.squirclePath(size, minOf(size.width, size.height) * percent, smoothing),
+/**
+ * A [CornerBasedShape], not merely a [Shape], so it can be handed to `MaterialTheme.shapes` — which
+ * means every Material 3 component in the launcher (sheets, cards, dialogs, menus) picks up Apple's
+ * continuous curvature instead of a circular arc, and per-corner overrides still work.
+ */
+class SquircleCornerShape(
+    topStart: CornerSize,
+    topEnd: CornerSize,
+    bottomEnd: CornerSize,
+    bottomStart: CornerSize,
+    private val smoothing: Float,
+) : CornerBasedShape(topStart, topEnd, bottomEnd, bottomStart) {
+
+    constructor(all: CornerSize, smoothing: Float) : this(all, all, all, all, smoothing)
+
+    override fun createOutline(
+        size: Size,
+        topStart: Float,
+        topEnd: Float,
+        bottomEnd: Float,
+        bottomStart: Float,
+        layoutDirection: LayoutDirection,
+    ): Outline {
+        val ltr = layoutDirection == LayoutDirection.Ltr
+        return Outline.Generic(
+            LauncherShapes.squirclePath(
+                size = size,
+                topLeft = if (ltr) topStart else topEnd,
+                topRight = if (ltr) topEnd else topStart,
+                bottomRight = if (ltr) bottomEnd else bottomStart,
+                bottomLeft = if (ltr) bottomStart else bottomEnd,
+                smoothing = smoothing,
+            ),
         )
+    }
+
+    override fun copy(
+        topStart: CornerSize,
+        topEnd: CornerSize,
+        bottomEnd: CornerSize,
+        bottomStart: CornerSize,
+    ): SquircleCornerShape = SquircleCornerShape(topStart, topEnd, bottomEnd, bottomStart, smoothing)
+
+    override fun toString(): String =
+        "SquircleCornerShape(topStart=$topStart, topEnd=$topEnd, bottomEnd=$bottomEnd, " +
+            "bottomStart=$bottomStart, smoothing=$smoothing)"
 }

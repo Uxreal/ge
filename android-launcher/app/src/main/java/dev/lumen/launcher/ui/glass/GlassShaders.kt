@@ -70,12 +70,13 @@ internal object GlassShaders {
 
             float4 col;
             if (uDisp > 0.001) {
-                float4 cr = content.eval(coord - offset * (1.0 + 0.12 * uDisp));
-                float4 cg = content.eval(coord - offset);
-                float4 cb = content.eval(coord - offset * (1.0 - 0.12 * uDisp));
-                col = float4(cr.r, cg.g, cb.b, max(max(cr.a, cg.a), cb.a));
+                half4 cr = content.eval(coord - offset * (1.0 + 0.12 * uDisp));
+                half4 cg = content.eval(coord - offset);
+                half4 cb = content.eval(coord - offset * (1.0 - 0.12 * uDisp));
+                col = float4(float(cr.r), float(cg.g), float(cb.b),
+                    float(max(max(cr.a, cg.a), cb.a)));
             } else {
-                col = content.eval(coord - offset);
+                col = float4(content.eval(coord - offset));
             }
 
             float a = col.a;
@@ -120,11 +121,11 @@ internal object GlassShaders {
         uniform float uTime;
         uniform float uComplexity;
         uniform float uSat;
-        uniform float4 uC0;
-        uniform float4 uC1;
-        uniform float4 uC2;
-        uniform float4 uC3;
-        uniform float4 uBase;
+        layout(color) uniform float4 uC0;
+        layout(color) uniform float4 uC1;
+        layout(color) uniform float4 uC2;
+        layout(color) uniform float4 uC3;
+        layout(color) uniform float4 uBase;
 
         float2 flow(float2 p, float t) {
             float amp = 0.18 * uComplexity;
@@ -177,10 +178,10 @@ internal object GlassShaders {
         uniform float uTime;
         uniform float uComplexity;
         uniform float uSat;
-        uniform float4 uC0;
-        uniform float4 uC1;
-        uniform float4 uC2;
-        uniform float4 uBase;
+        layout(color) uniform float4 uC0;
+        layout(color) uniform float4 uC1;
+        layout(color) uniform float4 uC2;
+        layout(color) uniform float4 uBase;
 
         float ribbon(float2 p, float phase, float freq, float thickness) {
             float y = sin(p.x * freq + phase) * 0.25 + sin(p.x * freq * 0.53 - phase * 0.7) * 0.12;
