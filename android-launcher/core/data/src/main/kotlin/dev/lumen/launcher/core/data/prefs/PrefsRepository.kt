@@ -1,0 +1,116 @@
+package dev.lumen.launcher.core.data.prefs
+
+import androidx.datastore.core.CorruptionException
+import androidx.datastore.core.DataStore
+import androidx.datastore.core.Serializer
+import com.google.protobuf.InvalidProtocolBufferException
+import dev.lumen.launcher.core.data.model.HomeModel
+import dev.lumen.launcher.core.data.proto.LumenPrefs
+import dev.lumen.launcher.core.data.proto.UsageStats
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.io.InputStream
+import java.io.OutputStream
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/** Corrupt prefs fall back to defaults; a launcher must never crash-loop on a bad file. */
+object PrefsSerializer : Serializer<LumenPrefs> {
+    override val defaultValue: LumenPrefs = LumenPrefs.getDefaultInstance()
+
+    override suspend fun readFrom(input: InputStream): LumenPrefs = try {
+        LumenPrefs.parseFrom(input)
+    } catch (e: InvalidProtocolBufferException) {
+        throw CorruptionException("prefs corrupted", e)
+    }
+
+    override suspend fun writeTo(t: LumenPrefs, output: OutputStream) = t.writeTo(output)
+}
+
+object UsageSerializer : Serializer<UsageStats> {
+    override val defaultValue: UsageStats = UsageStats.getDefaultInstance()
+
+    override suspend fun readFrom(input: InputStream): UsageStats = try {
+        UsageStats.parseFrom(input)
+    } catch (e: InvalidProtocolBufferException) {
+        throw CorruptionException("usage corrupted", e)
+    }
+
+    override suspend fun writeTo(t: UsageStats, output: OutputStream) = t.writeTo(output)
+}
+
+/**
+ * The proto's zero-values mean "unset", resolved here into the real defaults from the §3/§14
+ * decisions. UI code only ever sees [Snapshot].
+ */
+data class PrefsSnapshot(
+    val homeModel: HomeModel?,        // null until onboarding chooses
+    val columns: Int,
+    val themeMode: String,
+    val motionSpeed: Float,
+    val reduceMotion: Boolean,
+    val hapticIntensity: String,
+    val labelLines: Int,
+    val hideLabels: Boolean,
+    val parallax: Float,
+    val onboardingDone: Boolean,
+    val smoothness: Float,
+    val workspaceSeeded: Boolean,
+)
+
+@Singleton
+class PrefsRepository @Inject constructor(
+    private val store: DataStore<LumenPrefs>,
+    scope: CoroutineScope,
+) {
+    val prefs: StateFlow<PrefsSnapshot> = store.data
+        .catch { emit(LumenPrefs.getDefaultInstance()) }
+        .map { it.toSnapshot() }
+        .stateIn(scope, SharingStarted.Eagerly, LumenPrefs.getDefaultInstance().toSnapshot())
+
+    private val writeScope = scope
+
+    fun update(transform: (LumenPrefs.Builder) -> Unit) {
+        writeScope.launch {
+            runCatching {
+                store.updateData { current -> current.toBuilder().apply(transform).build() }
+            }
+        }
+    }
+
+    fun setHomeModel(model: HomeModel) = update { it.homeModel = model.name }
+    fun setColumns(columns: Int) = update { it.columns = columns.coerceIn(4, 6) }
+    fun setThemeMode(mode: String) = update { it.themeMode = mode }
+    fun setMotionSpeed(speed: Float) = update { it.motionSpeed = speed.coerceIn(0.5f, 1.5f) }
+    fun setReduceMotion(reduce: Boolean) = update { it.reduceMotion = reduce }
+    fun setHapticIntensity(intensity: String) = update { it.hapticIntensity = intensity }
+    fun setLabelLines(lines: Int) = update { it.labelLines = lines.coerceIn(1, 2) }
+    fun setHideLabels(hide: Boolean) = update { it.hideLabels = hide }
+    fun setParallax(value: Float) = update {
+        it.parallax = value.coerceIn(0f, 1.5f)
+        it.parallaxSet = true
+    }
+    fun setOnboardingDone() = update { it.onboardingDone = true }
+    fun setSmoothness(n: Float) = update { it.smoothness = n.coerceIn(2f, 6f) }
+    fun setWorkspaceSeeded() = update { it.workspaceSeeded = true }
+}
+
+private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
+    homeModel = homeModel.takeIf { it.isNotEmpty() }?.let { runCatching { HomeModel.valueOf(it) }.getOrNull() },
+    columns = if (columns in 4..6) columns else 4,
+    themeMode = themeMode.ifEmpty { "AUTO" },
+    motionSpeed = if (motionSpeed in 0.5f..1.5f) motionSpeed else 1f,
+    reduceMotion = reduceMotion,
+    hapticIntensity = hapticIntensity.ifEmpty { "STANDARD" },
+    labelLines = if (labelLines in 1..2) labelLines else 1,
+    hideLabels = hideLabels,
+    parallax = if (parallaxSet) parallax.coerceIn(0f, 1.5f) else 1f,
+    onboardingDone = onboardingDone,
+    smoothness = if (smoothness in 2f..6f) smoothness else 4.6f,
+    workspaceSeeded = workspaceSeeded,
+)

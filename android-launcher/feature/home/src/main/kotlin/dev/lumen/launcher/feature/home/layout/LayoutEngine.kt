@@ -1,530 +1,469 @@
-package dev.lumen.launcher.data.workspace
+package dev.lumen.launcher.feature.home.layout
 
-import dev.lumen.launcher.data.model.AppCategory
-import dev.lumen.launcher.data.model.AppInfo
-import dev.lumen.launcher.data.model.AppItem
-import dev.lumen.launcher.data.model.AppKey
-import dev.lumen.launcher.data.model.Cell
-import dev.lumen.launcher.data.model.FolderItem
-import dev.lumen.launcher.data.model.ItemContainer
-import dev.lumen.launcher.data.model.PageState
-import dev.lumen.launcher.data.model.WidgetItem
-import dev.lumen.launcher.data.model.WorkspaceItem
-import dev.lumen.launcher.data.model.WorkspaceState
+import dev.lumen.launcher.core.data.model.AppInfo
+import dev.lumen.launcher.core.data.model.AppItem
+import dev.lumen.launcher.core.data.model.AppKey
+import dev.lumen.launcher.core.data.model.Cell
+import dev.lumen.launcher.core.data.model.FolderItem
+import dev.lumen.launcher.core.data.model.GridItem
+import dev.lumen.launcher.core.data.model.HomeModel
+import dev.lumen.launcher.core.data.model.WidgetItem
+import dev.lumen.launcher.core.data.model.WorkspaceState
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 
 /**
- * Pure, side-effect free layout algebra for the workspace. Every mutation the UI performs
- * (drag, drop, folder creation, grid resize, page add/remove) funnels through here so the drag
- * layer stays dumb and the behaviour stays testable.
+ * Pure layout algebra for the home surface. Every drag, drop, folder operation and model switch
+ * funnels through here, so §5's behaviour is testable as plain data transformation — no Android
+ * types, no Compose.
+ *
+ * Two ideas carry the whole file:
+ *
+ *  * **Flow order.** §1's bottom-anchored grid gives every cell a flow index counted from the
+ *    bottom-left, row by row upward. `PACKED` is "the items, in flow order": positions are derived,
+ *    gaps are impossible, and a removal is just a list removal followed by [compact].
+ *  * **Pinned items.** Widgets (and anything spanning) do not flow. They keep their cells, and the
+ *    flowing items fill the free cells around them — §5's reflow policy in one sentence: `PACKED`
+ *    reflows around the pinned, `FREEFORM` never moves anything the user placed.
  */
-object WorkspaceOps {
+object LayoutEngine {
 
-    data class Located(
-        val container: ItemContainer,
-        val item: WorkspaceItem,
-        val indexInContainer: Int,
-    )
+    private val counter = AtomicLong(0L)
 
-    private var idCounter = 0L
+    fun newId(prefix: String): String =
+        "$prefix-${System.currentTimeMillis().toString(36)}-${counter.incrementAndGet().toString(36)}"
 
-    fun newId(prefix: String): String {
-        idCounter += 1
-        return "$prefix-${System.currentTimeMillis().toString(36)}-${idCounter.toString(36)}"
+    // ------------------------------------------------------------------ flow order
+
+    /** Index of a cell counted from the bottom-left, upward — §1's gravity as arithmetic. */
+    fun flowIndex(cell: Cell, columns: Int, rows: Int): Int =
+        (rows - 1 - cell.y) * columns + cell.x
+
+    /** The cell for a flow index on an empty page. */
+    fun cellAtFlowIndex(index: Int, columns: Int, rows: Int): Cell {
+        val row = rows - 1 - index / columns
+        return Cell(index % columns, row.coerceAtLeast(0))
     }
 
-    // ---------------------------------------------------------------- lookup
+    /** True for items that hold their cell instead of flowing: widgets, and anything spanning. */
+    fun isPinned(item: GridItem): Boolean =
+        item is WidgetItem || item.cell.spanX > 1 || item.cell.spanY > 1
 
-    fun locate(state: WorkspaceState, id: String): Located? {
-        state.dock.forEachIndexed { i, item ->
-            if (item.id == id) return Located(ItemContainer.Dock, item, i)
-        }
-        state.pages.forEach { page ->
-            page.items.forEachIndexed { i, item ->
-                if (item.id == id) return Located(ItemContainer.Page(page.id), item, i)
-            }
-        }
-        state.pages.forEach { page ->
-            page.items.filterIsInstance<FolderItem>().forEach { folder ->
-                folder.items.forEachIndexed { i, child ->
-                    if (child.id == id) return Located(ItemContainer.Folder(folder.id), child, i)
-                }
-            }
-        }
-        state.dock.filterIsInstance<FolderItem>().forEach { folder ->
-            folder.items.forEachIndexed { i, child ->
-                if (child.id == id) return Located(ItemContainer.Folder(folder.id), child, i)
-            }
-        }
-        return null
-    }
-
-    fun folder(state: WorkspaceState, folderId: String): FolderItem? =
-        (state.pages.asSequence().flatMap { it.items.asSequence() } + state.dock.asSequence())
-            .filterIsInstance<FolderItem>()
-            .firstOrNull { it.id == folderId }
-
-    fun itemsIn(state: WorkspaceState, container: ItemContainer): List<WorkspaceItem> = when (container) {
-        is ItemContainer.Dock -> state.dock
-        is ItemContainer.Page -> state.pages.firstOrNull { it.id == container.pageId }?.items.orEmpty()
-        is ItemContainer.Folder -> folder(state, container.folderId)?.items.orEmpty()
-    }
-
-    fun containsApp(state: WorkspaceState, key: AppKey): Boolean =
-        allAppItems(state).any { it.key == key }
-
-    fun allAppItems(state: WorkspaceState): List<AppItem> {
-        val out = mutableListOf<AppItem>()
-        fun collect(items: List<WorkspaceItem>) {
-            items.forEach { item ->
-                when (item) {
-                    is AppItem -> out += item
-                    is FolderItem -> out += item.items
-                    else -> Unit
-                }
-            }
-        }
-        state.pages.forEach { collect(it.items) }
-        collect(state.dock)
-        return out
-    }
-
-    fun widgetIds(state: WorkspaceState): List<Int> =
-        (state.pages.flatMap { it.items } + state.dock)
-            .filterIsInstance<WidgetItem>()
-            .map { it.appWidgetId }
-
-    // ---------------------------------------------------------------- occupancy
+    // ------------------------------------------------------------------ occupancy
 
     fun canPlace(
-        items: List<WorkspaceItem>,
+        state: WorkspaceState,
+        page: Int,
         cell: Cell,
         columns: Int,
         rows: Int,
         ignoreId: String? = null,
     ): Boolean {
         if (cell.x < 0 || cell.y < 0 || cell.right > columns || cell.bottom > rows) return false
-        return items.none { it.id != ignoreId && it.cell.overlaps(cell) }
+        return state.itemsOn(page).none { it.id != ignoreId && it.cell.overlaps(cell) }
     }
 
-    fun itemAt(items: List<WorkspaceItem>, x: Int, y: Int): WorkspaceItem? =
-        items.firstOrNull { it.cell.overlaps(Cell(x, y, 1, 1)) }
+    fun itemAt(state: WorkspaceState, page: Int, x: Int, y: Int): GridItem? =
+        state.itemsOn(page).firstOrNull { it.cell.overlaps(Cell(x, y)) }
 
-    fun firstFreeCell(
-        items: List<WorkspaceItem>,
+    /** Free cells of a page in flow order (bottom row first), around everything already placed. */
+    fun freeCells(
+        state: WorkspaceState,
+        page: Int,
+        columns: Int,
+        rows: Int,
+        ignoreId: String? = null,
+    ): List<Cell> {
+        val occupied = state.itemsOn(page).filter { it.id != ignoreId }
+        return (0 until columns * rows)
+            .map { cellAtFlowIndex(it, columns, rows) }
+            .filter { candidate -> occupied.none { it.cell.overlaps(candidate) } }
+    }
+
+    fun firstFree(
+        state: WorkspaceState,
+        page: Int,
         columns: Int,
         rows: Int,
         spanX: Int = 1,
         spanY: Int = 1,
     ): Cell? {
+        // Spans search top-down (widgets read best up top, under the Capsule); 1×1 follows gravity.
+        if (spanX == 1 && spanY == 1) return freeCells(state, page, columns, rows).firstOrNull()
         for (y in 0..(rows - spanY)) {
             for (x in 0..(columns - spanX)) {
-                val candidate = Cell(x, y, spanX, spanY)
-                if (canPlace(items, candidate, columns, rows)) return candidate
+                val cell = Cell(x, y, spanX, spanY)
+                if (canPlace(state, page, cell, columns, rows)) return cell
             }
         }
         return null
     }
 
-    /** Nearest free cell to [preferred], searched in rings so drops land where the finger was. */
-    fun nearestFreeCell(
-        items: List<WorkspaceItem>,
+    /** Nearest free cell to [preferred], searched in rings, so drops land where the finger was. */
+    fun nearestFree(
+        state: WorkspaceState,
+        page: Int,
         preferred: Cell,
         columns: Int,
         rows: Int,
         ignoreId: String? = null,
     ): Cell? {
-        if (canPlace(items, preferred, columns, rows, ignoreId)) return preferred
-        val maxRadius = maxOf(columns, rows)
-        for (radius in 1..maxRadius) {
+        if (canPlace(state, page, preferred, columns, rows, ignoreId)) return preferred
+        for (radius in 1..maxOf(columns, rows)) {
             for (dy in -radius..radius) {
                 for (dx in -radius..radius) {
-                    if (maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy)) != radius) continue
+                    if (maxOf(abs(dx), abs(dy)) != radius) continue
                     val candidate = preferred.copy(x = preferred.x + dx, y = preferred.y + dy)
-                    if (canPlace(items, candidate, columns, rows, ignoreId)) return candidate
+                    if (canPlace(state, page, candidate, columns, rows, ignoreId)) return candidate
                 }
             }
         }
         return null
     }
 
-    // ---------------------------------------------------------------- mutation
+    // ------------------------------------------------------------------ compaction (PACKED)
 
-    private fun mapContainer(
-        state: WorkspaceState,
-        container: ItemContainer,
-        transform: (List<WorkspaceItem>) -> List<WorkspaceItem>,
-    ): WorkspaceState = when (container) {
-        is ItemContainer.Dock -> state.copy(dock = transform(state.dock))
-        is ItemContainer.Page -> state.copy(
-            pages = state.pages.map { page ->
-                if (page.id == container.pageId) page.copy(items = transform(page.items)) else page
+    /**
+     * Re-derives every flowing item's position from its order: page by page, each flowing item takes
+     * the next free cell in flow order, overflow cascading to the next page. Pinned items never
+     * move. This is both §5's gap-collapse and the overflow behaviour of a drop on a full page.
+     */
+    fun compact(state: WorkspaceState, columns: Int, rows: Int): WorkspaceState {
+        val pinned = state.items.filter { isPinned(it) }
+        val flowing = state.items.filterNot { isPinned(it) }
+            .sortedWith(compareBy({ it.page }, { flowIndex(it.cell, columns, rows) }))
+        return state.copy(items = emptyList()).withFlow(pinned, flowing, columns, rows)
+    }
+
+    /**
+     * Places [orderedFlowing] into the free cells around [pinned], in exactly the given order —
+     * the one primitive both [compact] (which sorts by current position first) and
+     * [reorderPacked] (which supplies an explicit new order) share.
+     */
+    private fun WorkspaceState.withFlow(
+        pinned: List<GridItem>,
+        orderedFlowing: List<GridItem>,
+        columns: Int,
+        rows: Int,
+    ): WorkspaceState {
+        val placed = mutableListOf<GridItem>()
+        placed += pinned
+        var page = 0
+        var queue = orderedFlowing
+        while (queue.isNotEmpty() && page <= MAX_PAGES) {
+            val occupancy = WorkspaceState(items = placed, pageCount = page + 1)
+            val free = freeCells(occupancy, page, columns, rows)
+            val take = queue.take(free.size)
+            take.forEachIndexed { index, item -> placed += item.at(page, free[index]) }
+            queue = queue.drop(take.size)
+            page += 1
+        }
+        val usedPages = (placed.maxOfOrNull { it.page } ?: 0) + 1
+        return copy(items = placed, pageCount = usedPages.coerceAtLeast(1))
+    }
+
+    // ------------------------------------------------------------------ mutations
+
+    fun remove(state: WorkspaceState, id: String, model: HomeModel, columns: Int, rows: Int): WorkspaceState {
+        val next = state.copy(
+            items = state.items.mapNotNull { item ->
+                when {
+                    item.id == id -> null
+                    item is FolderItem -> item.copy(items = item.items.filterNot { it.id == id })
+                    else -> item
+                }
             },
         )
-        is ItemContainer.Folder -> mapFolder(state, container.folderId) { folder ->
-            folder.copy(items = transform(folder.items).filterIsInstance<AppItem>())
-        }
+        val dissolved = dissolveThin(next, model, columns, rows)
+        return if (model == HomeModel.PACKED) compact(dissolved, columns, rows) else dissolved
     }
 
-    private fun mapFolder(
-        state: WorkspaceState,
-        folderId: String,
-        transform: (FolderItem) -> WorkspaceItem,
-    ): WorkspaceState {
-        fun mapList(items: List<WorkspaceItem>) = items.map { item ->
-            if (item is FolderItem && item.id == folderId) transform(item) else item
-        }
-        return state.copy(
-            pages = state.pages.map { it.copy(items = mapList(it.items)) },
-            dock = mapList(state.dock),
+    /** Uninstall handling: every placement of the app goes, including inside folders. */
+    fun removeApp(state: WorkspaceState, key: AppKey, model: HomeModel, columns: Int, rows: Int): WorkspaceState {
+        val next = state.copy(
+            items = state.items.mapNotNull { item ->
+                when {
+                    item is AppItem && item.key == key -> null
+                    item is FolderItem -> item.copy(items = item.items.filterNot { it.key == key })
+                    else -> item
+                }
+            },
         )
+        val dissolved = dissolveThin(next, model, columns, rows)
+        return if (model == HomeModel.PACKED) compact(dissolved, columns, rows) else dissolved
     }
 
-    fun remove(state: WorkspaceState, id: String): WorkspaceState {
-        fun strip(items: List<WorkspaceItem>) = items.mapNotNull { item ->
-            when {
-                item.id == id -> null
-                item is FolderItem -> item.copy(items = item.items.filterNot { it.id == id })
-                else -> item
-            }
-        }
-        return state.copy(
-            pages = state.pages.map { it.copy(items = strip(it.items)) },
-            dock = strip(state.dock),
-        )
-    }
-
-    fun removeAppEverywhere(state: WorkspaceState, key: AppKey): WorkspaceState {
-        fun strip(items: List<WorkspaceItem>) = items.mapNotNull { item ->
-            when {
-                item is AppItem && item.key == key -> null
-                item is FolderItem -> item.copy(items = item.items.filterNot { it.key == key })
-                else -> item
-            }
-        }
-        return state.copy(
-            pages = state.pages.map { it.copy(items = strip(it.items)) },
-            dock = strip(state.dock),
-        )
-    }
-
-    fun update(
-        state: WorkspaceState,
-        id: String,
-        transform: (WorkspaceItem) -> WorkspaceItem,
-    ): WorkspaceState {
-        fun mapList(items: List<WorkspaceItem>) = items.map { item ->
-            when {
-                item.id == id -> transform(item)
-                item is FolderItem && item.items.any { it.id == id } ->
-                    item.copy(
-                        items = item.items.map { child ->
-                            if (child.id == id) transform(child) as? AppItem ?: child else child
-                        },
-                    )
-                else -> item
-            }
-        }
-        return state.copy(
-            pages = state.pages.map { it.copy(items = mapList(it.items)) },
-            dock = mapList(state.dock),
-        )
-    }
-
-    /** Moves [id] into [target] at [cell], removing it from wherever it currently lives. */
+    /**
+     * The drop. `FREEFORM` places at the nearest free cell to the finger. `PACKED` treats the drop
+     * cell as an *order* — the item is removed from the flow, re-inserted at the target's flow
+     * position, and everything re-derives, which is what makes icons visibly make room.
+     */
     fun move(
         state: WorkspaceState,
         id: String,
-        target: ItemContainer,
-        cell: Cell,
+        targetPage: Int,
+        targetCell: Cell,
+        model: HomeModel,
+        columns: Int,
+        rows: Int,
     ): WorkspaceState {
-        val located = locate(state, id) ?: return state
-        val item = located.item.withCell(cell)
-        if (target is ItemContainer.Folder && item !is AppItem) return state
-        val without = remove(state, id)
-        return mapContainer(without, target) { items -> items + item }
-    }
+        val fromFolder = state.folderOf(id)
+        val item = state.find(id) ?: return state
 
-    /** Reorders within a linear container (dock, folder) by index. */
-    fun reorder(
-        state: WorkspaceState,
-        container: ItemContainer,
-        fromIndex: Int,
-        toIndex: Int,
-    ): WorkspaceState = mapContainer(state, container) { items ->
-        if (fromIndex !in items.indices) {
-            items
+        var working = if (fromFolder != null) {
+            state.copy(
+                items = state.items.map { candidate ->
+                    if (candidate.id == fromFolder.id && candidate is FolderItem) {
+                        candidate.copy(items = candidate.items.filterNot { it.id == id })
+                    } else {
+                        candidate
+                    }
+                },
+            )
         } else {
-            val mutable = items.toMutableList()
-            val moved = mutable.removeAt(fromIndex)
-            mutable.add(toIndex.coerceIn(0, mutable.size), moved)
-            mutable.mapIndexed { index, item -> item.withCell(item.cell.copy(x = index, y = 0)) }
+            state
         }
+
+        working = when (model) {
+            HomeModel.FREEFORM -> {
+                val cell = nearestFree(working, targetPage, targetCell, columns, rows, ignoreId = id)
+                    ?: return state
+                working.copy(
+                    items = working.items.filterNot { it.id == id } + item.at(targetPage, cell),
+                    pageCount = maxOf(working.pageCount, targetPage + 1),
+                )
+            }
+
+            HomeModel.PACKED -> {
+                if (isPinned(item)) {
+                    val cell = nearestFree(working, targetPage, targetCell, columns, rows, ignoreId = id)
+                        ?: return state
+                    compact(
+                        working.copy(
+                            items = working.items.filterNot { it.id == id } + item.at(targetPage, cell),
+                            pageCount = maxOf(working.pageCount, targetPage + 1),
+                        ),
+                        columns,
+                        rows,
+                    )
+                } else {
+                    reorderPacked(working, item, targetPage, targetCell, columns, rows)
+                }
+            }
+        }
+
+        return dissolveThin(working, model, columns, rows)
     }
 
-    fun add(state: WorkspaceState, container: ItemContainer, item: WorkspaceItem): WorkspaceState =
-        mapContainer(state, container) { items -> items + item }
+    private fun reorderPacked(
+        state: WorkspaceState,
+        item: GridItem,
+        targetPage: Int,
+        targetCell: Cell,
+        columns: Int,
+        rows: Int,
+    ): WorkspaceState {
+        val others = state.items.filterNot { it.id == item.id }
+        val flowing = others.filterNot { isPinned(it) }
+            .sortedWith(compareBy({ it.page }, { flowIndex(it.cell, columns, rows) }))
+        val targetFlow = flowIndex(targetCell.coerceInto(columns, rows), columns, rows)
+        val insertAt = flowing.count { other ->
+            other.page < targetPage ||
+                (other.page == targetPage && flowIndex(other.cell, columns, rows) < targetFlow)
+        }
+        val reordered = flowing.toMutableList().apply { add(insertAt.coerceIn(0, size), item) }
+        val pinned = others.filter { isPinned(it) }
+        // Not compact(): the order here is the *new* order, and must not be re-derived from cells.
+        return state.copy(
+            items = emptyList(),
+            pageCount = maxOf(state.pageCount, targetPage + 1),
+        ).withFlow(pinned, reordered, columns, rows)
+    }
 
-    // ---------------------------------------------------------------- folders
+    fun place(
+        state: WorkspaceState,
+        item: GridItem,
+        model: HomeModel,
+        columns: Int,
+        rows: Int,
+    ): WorkspaceState {
+        val next = state.copy(
+            items = state.items + item,
+            pageCount = maxOf(state.pageCount, item.page + 1),
+        )
+        return if (model == HomeModel.PACKED && !isPinned(item)) compact(next, columns, rows) else next
+    }
 
-    /** Drops [sourceId] onto [targetId]: makes a folder, or grows an existing one. */
+    /** Swap two 1×1 items — §5's 200ms hover-to-swap in `FREEFORM`. */
+    fun swap(state: WorkspaceState, idA: String, idB: String): WorkspaceState {
+        val a = state.find(idA) ?: return state
+        val b = state.find(idB) ?: return state
+        if (isPinned(a) || isPinned(b)) return state
+        return state.copy(
+            items = state.items.map {
+                when (it.id) {
+                    idA -> it.at(b.page, b.cell)
+                    idB -> it.at(a.page, a.cell)
+                    else -> it
+                }
+            },
+        )
+    }
+
+    // ------------------------------------------------------------------ folders
+
+    /** Dropping [sourceId] on [targetId]: makes a folder, or grows one. §5's 520ms dwell commits here. */
     fun combine(
         state: WorkspaceState,
         targetId: String,
         sourceId: String,
-        labelFor: (List<AppItem>) -> String = { "Folder" },
+        model: HomeModel,
+        columns: Int,
+        rows: Int,
     ): WorkspaceState {
         if (targetId == sourceId) return state
-        val target = locate(state, targetId) ?: return state
-        val source = locate(state, sourceId) ?: return state
-        val sourceApps: List<AppItem> = when (val item = source.item) {
-            is AppItem -> listOf(item)
-            is FolderItem -> item.items
+        val target = state.find(targetId) ?: return state
+        val source = state.find(sourceId) as? AppItem ?: return state
+
+        val withoutSource = state.copy(
+            items = state.items.mapNotNull { item ->
+                when {
+                    item.id == sourceId -> null
+                    item is FolderItem -> item.copy(items = item.items.filterNot { it.id == sourceId })
+                    else -> item
+                }
+            },
+        )
+
+        val next = when (target) {
+            is FolderItem -> withoutSource.copy(
+                items = withoutSource.items.map { item ->
+                    if (item.id == targetId && item is FolderItem) {
+                        item.copy(items = (item.items + source).distinctBy { it.key.flat })
+                    } else {
+                        item
+                    }
+                },
+            )
+
+            is AppItem -> {
+                val folder = FolderItem(
+                    id = newId("folder"),
+                    page = target.page,
+                    cell = target.cell.copy(spanX = 1, spanY = 1),
+                    label = "",
+                    items = listOf(target, source).distinctBy { it.key.flat },
+                )
+                withoutSource.copy(
+                    items = withoutSource.items.map { if (it.id == targetId) folder else it },
+                )
+            }
+
             else -> return state
         }
 
-        return when (val targetItem = target.item) {
-            is FolderItem -> {
-                val merged = (targetItem.items + sourceApps).distinctBy { it.key.flat }
-                remove(state, sourceId).let { cleaned ->
-                    mapFolder(cleaned, targetId) { folder ->
-                        folder.copy(
-                            items = merged,
-                            label = if (folder.autoLabelled) labelFor(merged) else folder.label,
-                        )
+        return if (model == HomeModel.PACKED) compact(next, columns, rows) else next
+    }
+
+    fun renameFolder(state: WorkspaceState, folderId: String, label: String): WorkspaceState =
+        state.copy(
+            items = state.items.map { item ->
+                if (item.id == folderId && item is FolderItem) item.copy(label = label) else item
+            },
+        )
+
+    /** Folders with one child unwrap; empty folders vanish. Nesting depth is 1 by construction (§6). */
+    fun dissolveThin(state: WorkspaceState, model: HomeModel, columns: Int, rows: Int): WorkspaceState {
+        var changed = false
+        val next = state.copy(
+            items = state.items.mapNotNull { item ->
+                if (item is FolderItem) {
+                    when (item.items.size) {
+                        0 -> {
+                            changed = true
+                            null
+                        }
+                        1 -> {
+                            changed = true
+                            item.items.first().at(item.page, item.cell.copy(spanX = 1, spanY = 1))
+                        }
+                        else -> item
                     }
+                } else {
+                    item
                 }
-            }
-            is AppItem -> {
-                val contents = (listOf(targetItem) + sourceApps).distinctBy { it.key.flat }
-                val folder = FolderItem(
-                    id = newId("folder"),
-                    cell = targetItem.cell.copy(spanX = 1, spanY = 1),
-                    label = labelFor(contents),
-                    items = contents,
-                )
-                var next = remove(state, sourceId)
-                next = remove(next, targetId)
-                mapContainer(next, target.container) { items -> items + folder }
-            }
-            else -> state
-        }
+            },
+        )
+        if (!changed) return state
+        return if (model == HomeModel.PACKED) compact(next, columns, rows) else next
     }
 
-    /** Pulls an app back out of a folder onto [target]; dissolves folders left with one child. */
-    fun extractFromFolder(
-        state: WorkspaceState,
-        folderId: String,
-        itemId: String,
-        target: ItemContainer,
-        cell: Cell,
-    ): WorkspaceState {
-        val folder = folder(state, folderId) ?: return state
-        val child = folder.items.firstOrNull { it.id == itemId } ?: return state
-        var next = mapFolder(state, folderId) { f -> f.copy(items = f.items.filterNot { it.id == itemId }) }
-        next = mapContainer(next, target) { items -> items + child.withCell(cell) }
-        return dissolveThinFolders(next)
+    // ------------------------------------------------------------------ pages
+
+    fun trimTrailingEmptyPages(state: WorkspaceState): WorkspaceState {
+        var pages = state.pageCount
+        while (pages > 1 && state.items.none { it.page == pages - 1 }) pages -= 1
+        return state.copy(pageCount = pages)
     }
 
-    fun dissolveThinFolders(state: WorkspaceState): WorkspaceState {
-        fun mapList(items: List<WorkspaceItem>) = items.mapNotNull { item ->
-            if (item is FolderItem) {
-                when (item.items.size) {
-                    0 -> null
-                    1 -> item.items.first().withCell(item.cell.copy(spanX = 1, spanY = 1))
-                    else -> item
-                }
-            } else {
-                item
-            }
+    // ------------------------------------------------------------------ seeding & model switches
+
+    /** First run in `PACKED`: every app, alphabetically, filling pages from the bottom up. */
+    fun seedPacked(apps: List<AppInfo>, columns: Int, rows: Int): WorkspaceState {
+        val perPage = (columns * rows).coerceAtLeast(1)
+        val items = apps.sortedBy { it.label.lowercase() }.mapIndexed { index, app ->
+            AppItem(
+                id = newId("app"),
+                page = index / perPage,
+                cell = cellAtFlowIndex(index % perPage, columns, rows),
+                key = app.key,
+            )
         }
-        return state.copy(
-            pages = state.pages.map { it.copy(items = mapList(it.items)) },
-            dock = mapList(state.dock),
+        return WorkspaceState(
+            items = items,
+            pageCount = if (items.isEmpty()) 1 else (items.size - 1) / perPage + 1,
+            seeded = true,
         )
     }
 
-    /** Names a folder after the dominant category of its contents, Apple-style. */
-    fun autoLabel(items: List<AppItem>, categoryOf: (AppKey) -> AppCategory): String {
-        if (items.isEmpty()) return "Folder"
-        val dominant = items
-            .groupingBy { categoryOf(it.key) }
-            .eachCount()
-            .maxByOrNull { it.value }
-            ?.key ?: AppCategory.OTHER
-        return when (dominant) {
-            AppCategory.SOCIAL -> "Social"
-            AppCategory.COMMUNICATION -> "Messaging"
-            AppCategory.MEDIA -> "Media"
-            AppCategory.PHOTOGRAPHY -> "Photos"
-            AppCategory.PRODUCTIVITY -> "Work"
-            AppCategory.GAMES -> "Games"
-            AppCategory.NEWS -> "Reading"
-            AppCategory.SHOPPING -> "Shopping"
-            AppCategory.TRAVEL -> "Travel"
-            AppCategory.FINANCE -> "Finance"
-            AppCategory.HEALTH -> "Health"
-            AppCategory.EDUCATION -> "Learning"
-            AppCategory.UTILITIES -> "Tools"
-            AppCategory.SYSTEM -> "System"
-            AppCategory.OTHER -> "Folder"
-        }
-    }
-
-    // ---------------------------------------------------------------- pages
-
-    fun addPage(state: WorkspaceState, atIndex: Int = state.pages.size): WorkspaceState {
-        val pages = state.pages.toMutableList()
-        pages.add(atIndex.coerceIn(0, pages.size), PageState(id = newId("page")))
-        return state.copy(pages = pages)
-    }
-
-    fun removePage(state: WorkspaceState, pageId: String): WorkspaceState {
-        if (state.pages.size <= 1) return state
-        return state.copy(pages = state.pages.filterNot { it.id == pageId })
-    }
-
-    fun movePage(state: WorkspaceState, from: Int, to: Int): WorkspaceState {
-        if (from !in state.pages.indices) return state
-        val pages = state.pages.toMutableList()
-        val moved = pages.removeAt(from)
-        pages.add(to.coerceIn(0, pages.size), moved)
-        return state.copy(pages = pages)
-    }
-
-    fun trimTrailingEmptyPages(state: WorkspaceState): WorkspaceState {
-        val pages = state.pages.toMutableList()
-        while (pages.size > 1 && pages.last().items.isEmpty()) pages.removeAt(pages.lastIndex)
-        return state.copy(pages = pages)
-    }
-
-    /** Re-flows everything into a (possibly smaller) grid, spilling overflow onto new pages. */
-    fun reflow(state: WorkspaceState, columns: Int, rows: Int, dockColumns: Int): WorkspaceState {
-        val pages = mutableListOf<MutableList<WorkspaceItem>>()
-        fun sink(item: WorkspaceItem) {
-            val clamped = item.cell.coerceInto(columns, rows)
-            for (page in pages) {
-                val cell = nearestFreeCell(page, clamped, columns, rows, item.id)
-                if (cell != null) {
-                    page += item.withCell(cell)
-                    return
-                }
-            }
-            val fresh = mutableListOf<WorkspaceItem>()
-            val cell = firstFreeCell(fresh, columns, rows, clamped.spanX, clamped.spanY)
-                ?: Cell(0, 0, 1, 1)
-            fresh += item.withCell(cell)
-            pages += fresh
-        }
-
-        state.pages.forEach { page ->
-            pages += mutableListOf<WorkspaceItem>()
-            page.items
-                .sortedWith(compareBy({ it.cell.y }, { it.cell.x }))
-                .forEach { sink(it) }
-        }
-        // Widgets and icons that no longer fit spill into fresh pages via sink() above.
-        val newPages = pages.mapIndexed { index, items ->
-            PageState(
-                id = state.pages.getOrNull(index)?.id ?: newId("page"),
-                items = items,
-            )
-        }.ifEmpty { listOf(PageState(newId("page"))) }
-
-        val dock = state.dock
-            .sortedBy { it.cell.x }
-            .take(dockColumns)
-            .mapIndexed { index, item -> item.withCell(Cell(index, 0, 1, 1)) }
-
-        return trimTrailingEmptyPages(state.copy(pages = newPages, dock = dock))
-    }
-
-    // ---------------------------------------------------------------- bootstrap
-
-    private val DOCK_PRIORITY = listOf(
-        "com.android.dialer", "com.google.android.dialer", "com.samsung.android.dialer",
-        "com.google.android.apps.messaging", "com.android.messaging", "com.whatsapp",
-        "com.android.chrome", "org.mozilla.firefox", "com.microsoft.emmx",
-        "com.google.android.GoogleCamera", "com.android.camera2", "com.sec.android.app.camera",
-    )
+    /** First run in `FREEFORM`: an empty page; the drawer holds the apps. */
+    fun seedFreeform(): WorkspaceState = WorkspaceState(items = emptyList(), pageCount = 1, seeded = true)
 
     /**
-     * First-run layout: a curated dock (phone / messages / browser / camera when present) and the
-     * remaining apps laid out alphabetically across as many pages as they need.
+     * §5: models are switchable without data loss. To `PACKED`, every installed app must be on a
+     * page, so missing ones append in flow order; to `FREEFORM` nothing changes — positions survive
+     * verbatim and the drawer simply exists again.
      */
-    fun defaultLayout(
+    fun ensureAllApps(
+        state: WorkspaceState,
         apps: List<AppInfo>,
         columns: Int,
         rows: Int,
-        dockColumns: Int,
     ): WorkspaceState {
-        val sorted = apps.sortedBy { it.label.lowercase() }
-        val dockPicks = mutableListOf<AppInfo>()
-        DOCK_PRIORITY.forEach { pkg ->
-            if (dockPicks.size >= dockColumns) return@forEach
-            sorted.firstOrNull { it.packageName == pkg && dockPicks.none { p -> p.key == it.key } }
-                ?.let { dockPicks += it }
+        val missing = apps
+            .filterNot { state.containsApp(it.key) }
+            .sortedBy { it.label.lowercase() }
+        var working = state
+        for (app in missing) {
+            working = appendApp(working, app.key, columns, rows)
         }
-        if (dockPicks.size < dockColumns) {
-            sorted.asSequence()
-                .filter { !it.isSystemApp && dockPicks.none { p -> p.key == it.key } }
-                .take(dockColumns - dockPicks.size)
-                .forEach { dockPicks += it }
-        }
-
-        val dock = dockPicks.mapIndexed { index, app ->
-            AppItem(id = newId("app"), cell = Cell(index, 0), key = app.key)
-        }
-
-        val remaining = sorted.filter { app -> dockPicks.none { it.key == app.key } }
-        val perPage = (columns * rows).coerceAtLeast(1)
-        val pages = remaining.chunked(perPage).mapIndexed { pageIndex, chunk ->
-            PageState(
-                id = "page-$pageIndex",
-                items = chunk.mapIndexed { i, app ->
-                    AppItem(
-                        id = newId("app"),
-                        cell = Cell(i % columns, i / columns),
-                        key = app.key,
-                    )
-                },
-            )
-        }.ifEmpty { listOf(PageState("page-0")) }
-
-        return WorkspaceState(pages = pages, dock = dock, initialized = true)
+        return compact(working, columns, rows)
     }
 
-    /** Places freshly installed apps on the first page with room (or a new trailing page). */
-    fun autoPlace(
-        state: WorkspaceState,
-        keys: List<AppKey>,
-        columns: Int,
-        rows: Int,
-    ): WorkspaceState {
-        var next = state
-        keys.filterNot { containsApp(next, it) }.forEach { key ->
-            var placed = false
-            for (page in next.pages) {
-                val cell = firstFreeCell(page.items, columns, rows)
-                if (cell != null) {
-                    next = add(
-                        next,
-                        ItemContainer.Page(page.id),
-                        AppItem(id = newId("app"), cell = cell, key = key),
-                    )
-                    placed = true
-                    break
-                }
-            }
-            if (!placed) {
-                next = addPage(next)
-                val page = next.pages.last()
-                next = add(
-                    next,
-                    ItemContainer.Page(page.id),
-                    AppItem(id = newId("app"), cell = Cell(0, 0), key = key),
-                )
-            }
+    /** Newly installed app in `PACKED` lands at the end of the flow. */
+    fun appendApp(state: WorkspaceState, key: AppKey, columns: Int, rows: Int): WorkspaceState {
+        if (state.containsApp(key)) return state
+        var page = state.pageCount - 1
+        var cell = firstFree(state, page, columns, rows)
+        if (cell == null) {
+            page += 1
+            cell = cellAtFlowIndex(0, columns, rows)
         }
-        return next
+        return state.copy(
+            items = state.items + AppItem(newId("app"), page, cell, key),
+            pageCount = maxOf(state.pageCount, page + 1),
+        )
     }
+
+    private const val MAX_PAGES = 64
 }

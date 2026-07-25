@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+option java_package = "dev.lumen.launcher.core.data.proto";
+option java_multiple_files = true;
+
+// User preferences (§2: DataStore(Proto) for preferences). Scalar zero-values mean "unset";
+// PrefsRepository maps them to the real defaults so adding a field never migrates anything.
+message LumenPrefs {
+  int32 schema_version = 1;
+  string home_model = 2;        // "PACKED" | "FREEFORM"; "" until onboarding chooses one
+  int32 columns = 3;            // 4|5|6; 0 -> 4
+  string theme_mode = 4;        // LIGHT|DARK|AUTO|TRUE_BLACK; "" -> AUTO
+  float motion_speed = 5;       // 0.5..1.5; 0 -> 1.0
+  bool reduce_motion = 6;
+  string haptic_intensity = 7;  // OFF|LIGHT|STANDARD|STRONG; "" -> STANDARD
+  int32 label_lines = 8;        // 1|2; 0 -> 1
+  bool hide_labels = 9;
+  float parallax = 10;          // wallpaper offset multiplier 0..1.5; negative sentinel unused, 0 valid -> has_parallax
+  bool parallax_set = 11;       // distinguishes "user chose 0" from "unset -> default 1.0"
+  bool onboarding_done = 12;
+  float smoothness = 13;        // superellipse n, 2.0..6.0; 0 -> 4.6
+  bool workspace_seeded = 14;
+}
+
+// Launch statistics for the drawer's suggested-apps row (§6).
+message UsageStats {
+  map<string, int64> launch_counts = 1;   // AppKey.flat -> total launches
+  map<string, int64> last_launch = 2;     // AppKey.flat -> epoch millis
+}

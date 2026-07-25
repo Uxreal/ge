@@ -138,3 +138,68 @@ to establish layering over content (sheets, the Capsule, the control panel), so 
 blur (31) is still guarded, but predictive back, `RoleManager`, monochrome adaptive-icon layers and
 the modern `AppWidgetHost` sizing APIs stop needing dual paths. Consequence: Android 10 and earlier
 are unsupported, which is acceptable for a sideloaded launcher aimed at current hardware.
+
+## D12 — PACKED is "items in flow order"; positions are derived
+
+**Chosen:** the layout engine gives every cell a *flow index* counted from the bottom-left upward
+(§1's gravity as arithmetic). `PACKED` state is the ordered list of flowing items; `compact()`
+re-derives every position from that order around pinned items (widgets and anything spanning),
+and a drag-move is a list reorder, not a coordinate edit.
+
+**Rejected:** storing coordinates as the source of truth and writing bespoke gap-collapse and
+overflow-cascade passes against them.
+
+**Why:** deriving positions from order makes §5's hard cases fall out for free — a removal near a
+full page pulls an item back across the page boundary because the queue refills page by page, and
+the live drag preview is just "run the move, render the result". The one subtlety is recorded in
+the code: a reorder must feed its explicit order to placement directly, never through the sort in
+`compact()`, or the old cells win. A test pins this.
+
+## D13 — Widgets are pinned; only 1×1 items flow
+
+**Chosen:** in `PACKED`, widgets (and any spanning item) keep their exact cells and the flow fills
+around them.
+
+**Rejected:** letting widgets participate in the flow the way iOS reflows icons around widgets on
+insertion.
+
+**Why:** flowing spans means bin-packing on every mutation, with layouts that shift in ways the
+user did not ask for — the exact failure §5's `FREEFORM` rule ("never move anything the user
+placed") exists to prevent. Pinning widgets keeps both models predictable and keeps `compact()`
+linear. Cost: in `PACKED`, a widget drop does not shove icons aside mid-drag; icons reflow around
+its landing cell instead.
+
+## D14 — Drag implemented on Compose's detectors with an overridden long-press timeout
+
+**Chosen:** `detectDragGesturesAfterLongPress` (immediate `detectDragGestures` in wiggle mode) with
+`LocalViewConfiguration` overridden so the long-press threshold is §5's 280ms, plus a separate tap
+detector per icon. Hover/dwell logic lives in effects keyed on what they watch (520ms folder dwell,
+200ms reflow dwell, 400/600ms edge advance).
+
+**Rejected:** a fully hand-rolled `awaitEachGesture` state machine.
+
+**Why:** the platform detectors already handle slop, cancellation and consumption correctly, and
+the only thing wrong with them for §5 was the timeout constant — which `ViewConfiguration` is
+designed to carry. Less bespoke pointer code means fewer subtle input bugs on OEM builds.
+
+## D15 — Per-app usage stays in Proto DataStore, not Room
+
+**Chosen:** launch counts and recency live in a `UsageStats` proto next to the prefs store; the
+drawer's Suggested row ranks by frequency decayed with a ~4-day half-life.
+
+**Rejected:** a Room table, and seeding from `UsageStatsManager` at first run.
+
+**Why:** it is a small map with no relational shape, and keeping it out of the layout database
+keeps `grid_items` the only thing the home screen's first frame depends on. `UsageStatsManager`
+seeding needs the usage-access grant, which is not worth a permission prompt in Phase 1 — recorded
+as a gap, revisit with §6's Library view.
+
+## D16 — The one shared icon-loading composable is duplicated, not shared
+
+**Chosen:** `:feature:home` and `:feature:drawer` each carry a ~15-line `rememberAppIcon`.
+
+**Rejected:** a `:core:ui` module, or letting one feature import the other.
+
+**Why:** §2 forbids cross-feature imports, and a new module for fifteen lines is structure without
+substance. The moment a third consumer appears (search, Phase 3), the helper graduates into a real
+shared module and both copies die.

@@ -1,8 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lumen</string>
-    <string name="badge_service_label">Lumen notification dots</string>
-    <string name="widget_host_label">Lumen workspace</string>
-    <string name="device_admin_label">Lumen screen lock</string>
-    <string name="device_admin_description">Allows the sleep gesture to turn the screen off. Lumen requests no other device policy.</string>
 </resources>

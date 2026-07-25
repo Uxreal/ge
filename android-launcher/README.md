@@ -1,196 +1,105 @@
 # Lumen
 
-An Android home-screen replacement built around one idea: **Google's structure, Apple's feel, and
-glass as the material that binds them.** Every surface of chrome — dock, drawer, folders, menus,
-settings — is a slab of real refracting glass, and nearly everything about the launcher can be
-reshaped by the user.
+An Android home-screen replacement with one identity commitment (§1 of the build spec): **a single
+anchor at the top of the screen is the OS's only handle** — the Capsule, arriving in Phase 2 — and a
+**bottom-anchored grid**: page 1 fills from the bottom up, so icons live where your thumb is and
+empty space collects at the top, where the Capsule and widgets belong.
 
-Kotlin, Jetpack Compose, Material 3. No annotation processors, no DI framework, no network calls.
+Kotlin, Jetpack Compose, Room, Proto DataStore, Hilt. minSdk 30. **No network access, ever** — no
+analytics, no crash SDKs, no telemetry. Sideload distribution by design (`DECISIONS.md` D2).
 
----
+Current state: **Phase 1** (a real launcher). `STATUS.md` is the honest ledger of what is done,
+what is coded but unverified on hardware, and what is deliberately absent.
 
-## The design thesis
+## What Phase 1 gives you
 
-Neither platform's home screen is better; they are good at different things.
+* **Two home models, chosen at first run, switchable later without data loss.**
+  `PACKED` — every app on a page, iOS-like, gaps close themselves. `FREEFORM` — pages hold only
+  what you place, holes are preserved exactly, and the app drawer exists (swipe up from the bottom
+  edge).
+* **The §5 drag system at its specified timings.** 280ms lift with a haptic and a 1.08× scale, 1:1
+  `follow` under the finger, live reflow preview in PACKED after a 200ms hover, folder creation
+  after a 520ms dwell with the target dilating, page-edge auto-advance at 400ms then every 600ms,
+  and a release that carries the finger's velocity into the settle spring. An invalid drop springs
+  home with *no* haptic — the absence is the signal.
+* **Wiggle mode**: long-press empty wallpaper; ±1.5° at ~0.9Hz with per-icon phase offsets; X
+  badges hit at 48dp; Widgets / Settings / Done chips.
+* **Folders**: dwell-create, full-screen frosted sheet over the blurred home surface, inline
+  rename, auto-dissolve at one item.
+* **Real widgets**: `AppWidgetHost` with the full bind → configure Activity flow, previews in the
+  picker, cell-snapped resize handles in wiggle mode, and a quiet placeholder if a provider dies.
+* **A drawer** (FREEFORM): alphabetical grid, A–Z fast-scroll rail, usage-ranked Suggested row,
+  and type-to-launch — typing filters, Enter launches the top hit.
+* **Wallpaper parallax** via `setWallpaperOffsets`, with a 0–1.5× multiplier in Settings.
+* **The §3 token system** as the single source of truth: superellipse shapes (`n` exposed as a
+  smoothness slider, 2.0–6.0), six named motion springs with reduce-motion collapsing everything to
+  a 120ms cross-fade, a six-verb haptic vocabulary, and a contrast floor computed from the
+  wallpaper region behind each label — flipping label polarity on bright wallpapers instead of
+  stacking scrim.
+* **Accessibility**: every icon is one TalkBack node with custom actions (move between pages,
+  app info, uninstall, remove) so rearranging never requires a drag.
+* **Survives process death**: layout pre-warms from Room at `Application.onCreate`; a corrupt
+  database yields an empty rebuildable home screen, never a crash loop.
 
-| Borrowed from Google | Borrowed from Apple |
-| --- | --- |
-| Material You — the whole palette derives from the wallpaper | Spring physics: nothing eases, everything settles |
-| Material 3 typography, colour roles, and controls in settings | Continuous-curvature (superellipse) corners, not circular arcs |
-| Themed monochrome icons | Paged home screen with dot indicators |
-| The search pill in the dock | Long-press context menus that grow out of the icon |
-| Widgets, notification dots, app shortcuts | Folders that zoom open from the icon you tapped |
-| A drawer that is a real drawer | Jiggle-mode editing, and a floating dock |
+## Install on a phone (sideload)
 
-And then Liquid Glass over the top of both.
+Grab `releases/lumen-<version>.apk` from this repo (or build it: see below), then on the phone:
 
-## Liquid Glass, for real
+1. Copy the APK over (USB, Quick Share, cloud link — anything).
+2. Open it from **My Files** / **Files**. Android will ask to allow installs from that app —
+   allow it (Settings → *Install unknown apps*), then install.
+3. Launch **Lumen**, pick a home model, and accept the **default home** prompt.
+   If you skip it: Settings → Apps → **Choose default apps** → **Home app** → Lumen.
 
-Translucency on Android is usually a white rectangle at 12% alpha. This is not that.
+### Galaxy Z Flip / Fold notes
 
-The problem: a launcher window is translucent, and the wallpaper is composited by the system
-*behind* it. `RenderEffect` can only ever sample a layer's **own** content, so there is nothing
-behind the panel for it to blur. Every launcher that "does glass" runs into this.
+* One UI buries the default-home picker at **Settings → Apps → Choose default apps → Home app**.
+* The **cover screen** cannot run a third-party launcher without Samsung's Good Lock **MultiStar**
+  module; Lumen owns the main display only. A dedicated cover-screen layout is Phase 4 (§9).
+* Samsung restricts wallpaper reads for non-default launchers: the per-region label scrim
+  activates after Lumen becomes the default home and can read the wallpaper. Until then labels use
+  a conservative fixed shadow.
 
-Lumen solves it in three steps:
+To go back to One UI Home: Settings → Apps → Choose default apps → Home app.
 
-1. **Own the backdrop.** The wallpaper is drawn *inside* the app — either a snapshot of the user's
-   real wallpaper (`WallpaperManager`, when the platform lets a home app read it) or a bundled
-   GPU-rendered field (an animated mesh gradient, or aurora ribbons). Either way the pixels belong
-   to the launcher.
-2. **Capture it once.** The wallpaper and workspace are recorded into a single `GraphicsLayer`
-   (`Modifier.backdropSource`). One capture per frame, no matter how many glass panels exist.
-3. **Lens it per panel.** Each glass surface re-draws that layer into a private layer, translated so
-   the pixels line up, with a chained `RenderEffect`: a Gaussian blur, then an **AGSL** shader that
+## Build from source
 
-   * builds a signed-distance field of the panel's own superellipse silhouette,
-   * displaces the backdrop along the SDF normal — strongest at the rim, falling off toward the
-     centre — so content genuinely bends around the bevel,
-   * samples red and blue at slightly different displacements for chromatic dispersion,
-   * adds a specular rim keyed to a virtual light, with a matching shadow on the opposite edge,
-   * optionally sweeps a travelling sheen, and dithers to kill banding.
-
-   Colour maths runs un-premultiplied, so brightening the rim never overshoots alpha.
-
-The shader and the clip path share the same superellipse exponent, so the refraction rim lands
-exactly on the visible edge instead of drifting at the corners.
-
-**The light is real.** With `tiltReactive` on, the accelerometer steers the virtual light direction:
-tilt the phone and the highlight slides across every glass surface at once.
-
-**It degrades honestly.**
-
-| Device | What it does |
-| --- | --- |
-| API 33+ (Android 13+) | Full AGSL: refraction, dispersion, specular, sheen, grain |
-| API 31–32 | `RenderEffect` blur + tint + bevel + rim (no refraction) |
-| API 26–30 | Translucent tint + bevel + rim, no blur |
-| Low-RAM devices | Auto-drops to the Balanced tier |
-
-`GlassQuality.AUTO` picks the tier from the device; the user can pin it, and `OFF` disables glass
-everywhere in one switch. Glass panels only redraw when the pixels behind them actually change — a
-still home screen costs nothing, and any surface that animates the backdrop (page swipe, drag,
-drawer transition, animated wallpaper, sheen) holds a redraw ticket for exactly as long as it needs
-one.
-
-## What it does
-
-**Home** — Multiple pages with eight page-transition styles (slide, depth, zoom, cube, carousel,
-flip, liquid, parallax), optional infinite scroll, four page-indicator styles, wallpaper parallax, a
-glance pill (date / battery / dynamic-island), and a fully configurable grid from 2×2 to 12×12.
-
-**Drag and drop** — Long-press to enter jiggle mode; drag icons between pages, into the dock, onto
-each other to make folders, out of folders, or onto Remove/Uninstall targets. Edge-hover flips
-pages, hover-to-combine makes folders, and every drop lands through one shared code path so the
-dock, grid, folders and drawer all behave identically.
-
-**Dock** — Floating glass, edge glass, transparent or solid; 2–8 columns, 1–3 rows, its own icon
-size, and a Google-style search pill (or a glass pill, or a compact orb) above, below or inside it.
-
-**App drawer** — Five layouts (sheet, fullscreen, paged grid, vertical list, category tabs), five
-sort orders including usage and colour, A–Z fast-scroll rail, section headers, prediction row, work
-profile tab, hidden apps, and four open animations. The default sheet is liquid glass over a
-blurred, dimmed home screen.
-
-**Search** — Fuzzy app matching, deep shortcuts, an actual expression calculator, unit conversion,
-and a web fallback across five providers.
-
-**Folders** — Five preview styles (2×2 stack, 3×3 grid, fan, ring, cluster), four open animations
-including an Apple-style zoom from the tapped icon and a liquid morph, auto-naming from app
-category, glass or content-tinted backgrounds.
-
-**Widgets** — Full `AppWidgetHost` implementation: picker with previews, bind/configure flows,
-drag-to-place, edge-handle resizing that snaps to the grid, and an optional glass tile behind each
-widget so third-party widgets stop looking pasted on.
-
-**Icons** — Ten mask shapes (squircle, circle, rounded square, square, teardrop, hexagon, cookie,
-clover, pebble, system) with adjustable corner radius and squircle smoothing, icon-pack support
-(ADW/Nova/GO `appfilter.xml`), Material You themed icons, per-icon colour grading, optional gloss,
-per-app custom icons and renaming, and an optional glass tile under every icon.
-
-**Notification dots** — Dot, large dot or count, four positions, per-app muting, folder aggregation.
-
-**Gestures** — Ten triggers (swipe up/down, two-finger swipes, double tap, long-press, pinch in/out,
-edge swipes, home press) each bindable to any of eighteen actions, including launching a specific
-app.
-
-**Settings** — A schema-driven surface over the whole `LauncherSettings` tree: eighteen sections,
-searchable, with a live preview of the home screen that updates while you drag a slider, seven
-presets (Cupertino, Material You, Liquid Max, Minimal, Performance, One-handed, Hybrid), a glass
-playground with per-surface overrides, and JSON export/import of your entire setup.
-
-## Build
-
-Requires JDK 17+ and the Android SDK (compileSdk 36, build-tools 36).
+Requires JDK 17+ and the Android SDK (compileSdk 36).
 
 ```bash
 cd android-launcher
-./gradlew assembleDebug
+./gradlew :app:assembleDebug          # debug APK
+./gradlew :app:assembleRelease        # R8-minified, debug-signed (sideload build)
+./gradlew test                        # unit tests (design tokens + layout engine)
+./gradlew :benchmark:connectedBenchmarkAndroidTest   # §11 budgets — physical device required
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
-
-Then set Lumen as the default home app (Settings → Apps → Default apps → Home app, or press Home and
-pick it). Two optional grants unlock optional features:
-
-* **Notification access** — notification dots. Settings → Badges → Notification access.
-* **Usage access** — usage-based drawer sorting and predictions. Settings → Drawer → Usage access.
-* **Device admin (force-lock only)** — requested the first time you use a "sleep" gesture, and used
-  for nothing else.
-
-Wallpaper reads are best-effort: recent Android versions restrict `WallpaperManager` for apps that
-are not the default home. When the read fails, Lumen falls back to a bundled animated wallpaper so
-the glass always has something to refract — or set the source to **System** to show the real
-wallpaper through the window, at the cost of refraction over empty areas.
 
 ## Architecture
 
 ```
-app/src/main/java/dev/lumen/launcher/
-  LauncherApplication.kt      process-lifetime service graph (manual DI, no Hilt)
-  MainActivity.kt             the HOME activity: edge-to-edge, wallpaper window, home-press handling
-  data/
-    Services.kt               every service interface + the DI container + composition locals
-    model/Models.kt           AppKey, AppInfo, workspace items, widget/shortcut models
-    workspace/
-      WorkspaceOps.kt         pure layout algebra: placement, folders, pages, reflow, bootstrap
-      WorkspaceStore.kt       persisted layout (typed DataStore, JSON, debounced)
-    prefs/
-      LauncherSettings.kt     the entire settings schema, serializable, all defaults
-      SettingsStore.kt        optimistic in-memory writes, conflated persistence
-      SettingsCatalog.kt      the registry that generates the settings UI
-      Presets.kt              bundled looks
-    apps/                     LauncherApps enumeration, work profiles, usage tracking
-    icons/                    icon rendering, masking, theming, icon packs, two-level cache
-    widgets/                  AppWidgetHost controller
-    notifications/            notification listener → badge counts
-    shortcuts/                deep shortcuts
-    wallpaper/                wallpaper snapshot for the glass backdrop
-  ui/
-    glass/                    the material: AGSL shaders, backdrop capture, style resolution, shapes
-    theme/                    Material You colour, typography, spring motion tokens
-    wallpaper/                the in-app wallpaper layer (snapshot + GPU wallpapers)
-    common/                   AppIcon, labels, badges, haptics, press handling
-    drag/                     cross-surface drag session and the single drop-application path
-    home/                     pager, grid, dock, indicator, glance pill, folders, context menu
-    drawer/                   the app drawer
-    search/                   the search engine (no Compose types)
-    widgets/                  widget host view and picker
-    gestures/                 the gesture layer
-    settings/                 the generated settings experience
-  system/SystemActions.kt     status bar, lock, assistant, system settings deep links
+build-logic/               convention plugins: one definition of SDK/Java/Compose/Hilt for all modules
+core/design/               §3 tokens: Superellipse, MotionTokens, Haptics, ContrastScrim,
+                           LumenTypography, Depth (one shadow, 1dp highlight, 0.5dp hairline),
+                           GridGeometry (bottom gravity), FrostedSurface (SDF lens, API-tiered)
+core/data/                 Room grid persistence, Proto DataStore prefs + usage, LauncherApps index,
+                           two-tier IconCache (main-thread decode asserted), wallpaper offsets +
+                           luminance map, RoleManager plumbing.  No dependency on core/design.
+feature/home/              LayoutEngine (pure; flow order, PACKED reflow, FREEFORM invariants),
+                           HomeScreen (pager, grid, §5 drag, wiggle, folders, indicator)
+feature/drawer/            drawer + fast-scroll + suggestions + type-to-launch
+feature/widgets/           AppWidgetHost wrapper, picker, host frame with resize handles
+feature/settings/          Compose settings skeleton with the §7 collapsing header
+app/                       Hilt graph, HOME activity, widget bind/configure flows, composition root
+benchmark/                 Macrobenchmark for the §11 budgets
 ```
 
-Deliberate choices:
+Module rules (§2): features never import each other; `:core:data` never imports `:core:design` —
+icons are cached **unmasked** and masked at draw time, which is why a shape change is instant and
+costs no cache invalidation.
 
-* **No annotation processors.** No Hilt, no Room, no KSP — a manual container and typed DataStore
-  keep the build fast and the graph obvious.
-* **Settings are one immutable tree.** Persistence, the generated UI, presets, search and
-  backup/restore are all derived from `LauncherSettings`, so adding a knob means adding a field and
-  one catalog entry.
-* **Layout logic is pure.** `WorkspaceOps` has no Android or Compose imports, so drag behaviour is
-  reasoned about (and tested) as data transformation.
-* **One settings snapshot per frame.** The root collects the settings flow once and publishes it
-  through a composition local; leaves never re-collect.
-* **Never crash the home screen.** Every cross-app call — `PackageManager`, `LauncherApps`,
-  `AppWidgetHost`, wallpaper reads, reflection into `StatusBarManager` — is wrapped and degrades to
-  a visible fallback.
+## The paper trail
+
+* `DECISIONS.md` — every non-obvious choice, the alternative rejected, and why.
+* `STATUS.md` — the phase ledger. Nothing is claimed done without the §13 criterion behind it, and
+  no performance number appears without Macrobenchmark output.

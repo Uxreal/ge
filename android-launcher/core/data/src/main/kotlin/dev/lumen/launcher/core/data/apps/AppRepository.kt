@@ -1,4 +1,4 @@
-package dev.lumen.launcher.data.apps
+package dev.lumen.launcher.core.data.apps
 
 import android.app.ActivityOptions
 import android.content.BroadcastReceiver
@@ -20,11 +20,10 @@ import android.os.UserHandle
 import android.os.UserManager
 import android.view.View
 import androidx.core.content.ContextCompat
-import dev.lumen.launcher.data.AppRepository
-import dev.lumen.launcher.data.model.AppCategory
-import dev.lumen.launcher.data.model.AppInfo
-import dev.lumen.launcher.data.model.AppKey
-import dev.lumen.launcher.data.prefs.AppOpenAnimation
+import dev.lumen.launcher.core.data.model.AppCategory
+import dev.lumen.launcher.core.data.model.AppInfo
+import dev.lumen.launcher.core.data.model.AppKey
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -40,6 +39,8 @@ import kotlinx.coroutines.withContext
 import java.text.Collator
 import java.text.Normalizer
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Shared translation between `AppKey.profile` (a `UserHandle` serial number) and the live
@@ -78,10 +79,11 @@ internal object LauncherProfiles {
  * announced on [installed]/[uninstalled] so the workspace can auto-place and prune without
  * diffing the whole world itself.
  */
-class DefaultAppRepository(
-    context: Context,
+@Singleton
+class AppRepository @Inject constructor(
+    @ApplicationContext context: Context,
     private val scope: CoroutineScope,
-) : AppRepository {
+) {
 
     private val appContext: Context = context.applicationContext
     private val launcherApps: LauncherApps? = runCatching {
@@ -93,25 +95,17 @@ class DefaultAppRepository(
     private val packageManager: PackageManager = appContext.packageManager
 
     private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
-    override val apps: StateFlow<List<AppInfo>> = _apps.asStateFlow()
+    val apps: StateFlow<List<AppInfo>> = _apps.asStateFlow()
 
     private val _loading = MutableStateFlow(true)
-    override val loading: StateFlow<Boolean> = _loading.asStateFlow()
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
     // Buffered so the LauncherApps callback thread is never suspended by a slow collector.
     private val _installed = MutableSharedFlow<AppKey>(extraBufferCapacity = 128)
-    override val installed: SharedFlow<AppKey> = _installed.asSharedFlow()
+    val installed: SharedFlow<AppKey> = _installed.asSharedFlow()
 
     private val _uninstalled = MutableSharedFlow<AppKey>(extraBufferCapacity = 128)
-    override val uninstalled: SharedFlow<AppKey> = _uninstalled.asSharedFlow()
-
-    /**
-     * Which system transition [launch] asks the framework for. Defaults to the icon-origin zoom;
-     * the UI layer mirrors `MotionSettings.appOpenAnimation` onto it, because the repository is
-     * constructed before the settings store exists and must not depend on it.
-     */
-    @Volatile
-    var openAnimation: AppOpenAnimation = AppOpenAnimation.ZOOM_FROM_ICON
+    val uninstalled: SharedFlow<AppKey> = _uninstalled.asSharedFlow()
 
     /** Flat key -> app. Replaced wholesale on every publish so readers never see a torn map. */
     @Volatile
@@ -198,9 +192,9 @@ class DefaultAppRepository(
 
     // ------------------------------------------------------------------ reads
 
-    override fun app(key: AppKey): AppInfo? = index[key.flat]
+    fun app(key: AppKey): AppInfo? = index[key.flat]
 
-    override fun hasWorkProfile(): Boolean =
+    fun hasWorkProfile(): Boolean =
         runCatching { userManager?.userProfiles?.any { it != Process.myUserHandle() } }.getOrNull() == true
 
     /** Live handle for a persisted profile serial, or null when that profile is gone. */
@@ -209,7 +203,7 @@ class DefaultAppRepository(
 
     // ------------------------------------------------------------------ loading
 
-    override fun refresh() {
+    fun refresh() {
         if (!fullLoadPending.compareAndSet(false, true)) return
         scope.launch { reloadAll() }
     }
@@ -378,7 +372,7 @@ class DefaultAppRepository(
 
     // ------------------------------------------------------------------ actions
 
-    override fun launch(key: AppKey, sourceBounds: Rect?): Boolean {
+    fun launch(key: AppKey, sourceBounds: Rect? = null): Boolean {
         val apps = launcherApps ?: return launchViaIntent(key)
         val user = profileHandle(key.profile) ?: Process.myUserHandle()
         val component = ComponentName(key.packageName, key.activityName)
@@ -400,18 +394,9 @@ class DefaultAppRepository(
         true
     }.getOrDefault(false)
 
-    /**
-     * Maps the user's [AppOpenAnimation] onto what the platform can actually do from a launcher:
-     * a clip reveal grows the window out of the icon's rectangle, a scale-up zooms it, a custom
-     * animation cross-fades, and `SYSTEM` leaves the window animation alone.
-     */
-    private fun launchOptions(bounds: Rect?): Bundle? = when (openAnimation) {
-        AppOpenAnimation.SYSTEM -> null
-        AppOpenAnimation.FADE -> customFade()
-        AppOpenAnimation.ZOOM_FROM_ICON, AppOpenAnimation.LIQUID_EXPAND ->
-            bounds?.let { clipReveal(it) ?: scaleUp(it) }
-        AppOpenAnimation.SLIDE_UP -> bounds?.let { scaleUp(it) ?: clipReveal(it) }
-    }
+    /** Clip-reveal from the icon's rectangle when bounds are known, scale-up as the fallback. */
+    private fun launchOptions(bounds: Rect?): Bundle? =
+        bounds?.let { clipReveal(it) ?: scaleUp(it) }
 
     private fun clipReveal(bounds: Rect): Bundle? = runCatching {
         ActivityOptions.makeClipRevealAnimation(
@@ -433,15 +418,7 @@ class DefaultAppRepository(
         ).toBundle()
     }.getOrNull()
 
-    private fun customFade(): Bundle? = runCatching {
-        ActivityOptions.makeCustomAnimation(
-            appContext,
-            android.R.anim.fade_in,
-            android.R.anim.fade_out,
-        ).toBundle()
-    }.getOrNull()
-
-    override fun openAppInfo(key: AppKey, sourceBounds: Rect?) {
+    fun openAppInfo(key: AppKey, sourceBounds: Rect? = null) {
         val apps = launcherApps
         val user = profileHandle(key.profile) ?: Process.myUserHandle()
         val component = ComponentName(key.packageName, key.activityName)
@@ -460,7 +437,7 @@ class DefaultAppRepository(
         }
     }
 
-    override fun requestUninstall(key: AppKey) {
+    fun requestUninstall(key: AppKey) {
         val intent = Intent(Intent.ACTION_DELETE, Uri.fromParts("package", key.packageName, null))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         profileHandle(key.profile)?.let { intent.putExtra(Intent.EXTRA_USER, it) }
@@ -468,7 +445,7 @@ class DefaultAppRepository(
     }
 
     /** A preloaded system app can only be reverted to its factory version, never removed. */
-    override fun canUninstall(key: AppKey): Boolean {
+    fun canUninstall(key: AppKey): Boolean {
         val flags = applicationInfoOf(key)?.flags ?: return false
         val system = flags and ApplicationInfo.FLAG_SYSTEM != 0
         val updated = flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0

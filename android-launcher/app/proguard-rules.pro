@@ -1,16 +1,11 @@
-# Keep kotlinx.serialization generated serializers for our persisted models.
--keepattributes *Annotation*, InnerClasses
--dontnote kotlinx.serialization.**
-
--keepclassmembers class dev.lumen.launcher.** {
-    *** Companion;
+# Lumen release rules.
+#
+# Kotlin, Compose, Hilt, Room and DataStore all ship consumer rules; what remains is protobuf lite,
+# whose generated messages are reached reflectively by the runtime.
+-keep class dev.lumen.launcher.core.data.proto.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
 }
--keepclasseswithmembers class dev.lumen.launcher.** {
-    kotlinx.serialization.KSerializer serializer(...);
-}
--keep,includedescriptorclasses class dev.lumen.launcher.**$$serializer { *; }
 
-# Launcher entry points referenced from the manifest only.
--keep class dev.lumen.launcher.LauncherApplication { *; }
--keep class dev.lumen.launcher.MainActivity { *; }
--keep class dev.lumen.launcher.data.notifications.BadgeNotificationListener { *; }
+# AppWidgetHostView subclass creation paths use reflection on some OEMs.
+-keep class android.appwidget.AppWidgetHostView { *; }

@@ -24,10 +24,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -72,6 +74,14 @@ fun AppIcon(
     smoothness: Float = Superellipse.DEFAULT_SMOOTHNESS,
     wiggle: Boolean = false,
     wigglePhase: Float = 0f,
+    /**
+     * When false the icon renders and announces but consumes no pointer input — the caller owns the
+     * gesture (the home grid's drag layer needs raw events for §5's lift/dwell timings).
+     */
+    interactive: Boolean = true,
+    /** §9: non-drag equivalents (move/remove/app info) surfaced to TalkBack and Switch Access. */
+    accessibilityActions: List<CustomAccessibilityAction> = emptyList(),
+    externallyPressed: Boolean = false,
     onClick: (Rect) -> Unit,
     onLongPress: ((Rect) -> Unit)? = null,
 ) {
@@ -84,7 +94,7 @@ fun AppIcon(
 
     // §5: the icon scales to 1.08 on lift, with the micro token.
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) PRESS_SCALE else 1f,
+        targetValue = if (pressed || externallyPressed) PRESS_SCALE else 1f,
         animationSpec = motion.micro(),
         label = "iconPress",
     )
@@ -112,6 +122,7 @@ fun AppIcon(
                     onLongPress?.invoke(bounds)
                     onLongPress != null
                 }
+                if (accessibilityActions.isNotEmpty()) customActions = accessibilityActions
             }
             .onGloballyPositioned { coords ->
                 val position = coords.positionInWindow()
@@ -122,14 +133,20 @@ fun AppIcon(
                     (position.y + coords.size.height).roundToInt(),
                 )
             }
-            .launcherPressable(
-                onPressChange = { pressed = it },
-                onClick = { onClick(bounds) },
-                onLongPress = onLongPress?.let { action ->
-                    {
-                        haptics.lift()
-                        action(bounds)
-                    }
+            .then(
+                if (interactive) {
+                    Modifier.launcherPressable(
+                        onPressChange = { pressed = it },
+                        onClick = { onClick(bounds) },
+                        onLongPress = onLongPress?.let { action ->
+                            {
+                                haptics.lift()
+                                action(bounds)
+                            }
+                        },
+                    )
+                } else {
+                    Modifier
                 },
             ),
         horizontalAlignment = Alignment.CenterHorizontally,

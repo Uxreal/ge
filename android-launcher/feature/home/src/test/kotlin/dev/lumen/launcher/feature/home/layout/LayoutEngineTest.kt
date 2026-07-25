@@ -1,15 +1,14 @@
-package dev.lumen.launcher.data.workspace
+package dev.lumen.launcher.feature.home.layout
 
-import dev.lumen.launcher.data.model.AppCategory
-import dev.lumen.launcher.data.model.AppInfo
-import dev.lumen.launcher.data.model.AppItem
-import dev.lumen.launcher.data.model.AppKey
-import dev.lumen.launcher.data.model.Cell
-import dev.lumen.launcher.data.model.FolderItem
-import dev.lumen.launcher.data.model.ItemContainer
-import dev.lumen.launcher.data.model.PageState
-import dev.lumen.launcher.data.model.WidgetItem
-import dev.lumen.launcher.data.model.WorkspaceState
+import dev.lumen.launcher.core.data.model.AppCategory
+import dev.lumen.launcher.core.data.model.AppInfo
+import dev.lumen.launcher.core.data.model.AppItem
+import dev.lumen.launcher.core.data.model.AppKey
+import dev.lumen.launcher.core.data.model.Cell
+import dev.lumen.launcher.core.data.model.FolderItem
+import dev.lumen.launcher.core.data.model.HomeModel
+import dev.lumen.launcher.core.data.model.WidgetItem
+import dev.lumen.launcher.core.data.model.WorkspaceState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -18,417 +17,287 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [WorkspaceOps] is deliberately free of Android and Compose types, so the behaviour behind every
- * drag, drop and grid change can be verified as plain data transformation.
+ * §5's behaviour as data transformation: bottom gravity, PACKED reflow around pinned widgets,
+ * FREEFORM never moving what the user placed, folders, and lossless model switches.
  */
-class WorkspaceOpsTest {
+class LayoutEngineTest {
 
-    private fun key(name: String, profile: Long = 0L) = AppKey("com.example.$name", ".Main", profile)
+    private val cols = 4
+    private val rows = 5
 
-    private fun app(id: String, x: Int, y: Int, name: String = id) =
-        AppItem(id = id, cell = Cell(x, y), key = key(name))
+    private fun key(name: String) = AppKey("com.example.$name", ".Main")
 
-    private fun state(vararg items: AppItem) = WorkspaceState(
-        pages = listOf(PageState("p0", items.toList())),
-        dock = emptyList(),
-        initialized = true,
+    private fun app(id: String, page: Int, cell: Cell) = AppItem(id, page, cell, key(id))
+
+    private fun info(name: String) = AppInfo(
+        key = key(name), label = name, searchTokens = name.lowercase(),
+        isSystemApp = false, isWorkProfile = false,
+        firstInstallTime = 0L, lastUpdateTime = 0L, category = AppCategory.OTHER,
     )
 
-    // ------------------------------------------------------------------ occupancy
+    // ------------------------------------------------------------------ flow order (§1 gravity)
 
     @Test
-    fun `cells overlap only when they intersect`() {
-        assertTrue(Cell(0, 0, 2, 2).overlaps(Cell(1, 1)))
-        assertFalse(Cell(0, 0, 2, 2).overlaps(Cell(2, 0)))
-        assertFalse(Cell(0, 0).overlaps(Cell(0, 1)))
+    fun `flow index counts from the bottom-left upward`() {
+        // Bottom row is indices 0..3, the row above 4..7, and so on.
+        assertEquals(0, LayoutEngine.flowIndex(Cell(0, rows - 1), cols, rows))
+        assertEquals(3, LayoutEngine.flowIndex(Cell(3, rows - 1), cols, rows))
+        assertEquals(4, LayoutEngine.flowIndex(Cell(0, rows - 2), cols, rows))
+        assertEquals(cols * rows - 1, LayoutEngine.flowIndex(Cell(cols - 1, 0), cols, rows))
     }
 
     @Test
-    fun `coerceInto clamps position and span to the grid`() {
-        val clamped = Cell(9, 9, 4, 4).coerceInto(columns = 5, rows = 5)
-        assertEquals(Cell(1, 1, 4, 4), clamped)
-
-        val oversized = Cell(0, 0, 9, 9).coerceInto(columns = 4, rows = 3)
-        assertEquals(Cell(0, 0, 4, 3), oversized)
+    fun `cellAtFlowIndex inverts flowIndex`() {
+        for (index in 0 until cols * rows) {
+            val cell = LayoutEngine.cellAtFlowIndex(index, cols, rows)
+            assertEquals(index, LayoutEngine.flowIndex(cell, cols, rows))
+        }
     }
 
     @Test
-    fun `firstFreeCell skips occupied cells and respects spans`() {
-        val items = listOf(app("a", 0, 0), app("b", 1, 0))
-        assertEquals(Cell(2, 0), WorkspaceOps.firstFreeCell(items, columns = 4, rows = 2))
-
-        // A 2x2 widget cannot fit on row 0 next to the two icons on a 4x2 grid.
-        assertEquals(
-            Cell(2, 0, 2, 2),
-            WorkspaceOps.firstFreeCell(items, columns = 4, rows = 2, spanX = 2, spanY = 2),
-        )
+    fun `seeding PACKED fills the bottom row first`() {
+        val seeded = LayoutEngine.seedPacked(listOf(info("a"), info("b"), info("c")), cols, rows)
+        val cells = seeded.items.map { it.cell }
+        // Three apps: bottom-left, then rightward along the bottom row. Thumb territory.
+        assertTrue(cells.all { it.y == rows - 1 })
+        assertEquals(listOf(0, 1, 2), cells.map { it.x }.sorted())
+        assertTrue(seeded.seeded)
+        assertEquals(1, seeded.pageCount)
     }
 
     @Test
-    fun `firstFreeCell returns null when the page is full`() {
-        val full = (0 until 4).map { app("a$it", it, 0) }
-        assertNull(WorkspaceOps.firstFreeCell(full, columns = 4, rows = 1))
+    fun `seeding overflows onto more pages`() {
+        val many = (0 until cols * rows + 3).map { info("app%02d".format(it)) }
+        val seeded = LayoutEngine.seedPacked(many, cols, rows)
+        assertEquals(2, seeded.pageCount)
+        assertEquals(3, seeded.itemsOn(1).size)
+    }
+
+    // ------------------------------------------------------------------ PACKED reflow (§5)
+
+    @Test
+    fun `removal in PACKED collapses the gap toward gravity`() {
+        val state = LayoutEngine.seedPacked(listOf(info("a"), info("b"), info("c")), cols, rows)
+        val ids = state.items.sortedBy { LayoutEngine.flowIndex(it.cell, cols, rows) }.map { it.id }
+
+        val next = LayoutEngine.remove(state, ids[0], HomeModel.PACKED, cols, rows)
+
+        // The two survivors slid down into flow indices 0 and 1 — no hole.
+        val flows = next.items.map { LayoutEngine.flowIndex(it.cell, cols, rows) }.sorted()
+        assertEquals(listOf(0, 1), flows)
     }
 
     @Test
-    fun `nearestFreeCell prefers the requested cell then searches outward`() {
-        val items = listOf(app("a", 2, 2))
-        assertEquals(Cell(1, 1), WorkspaceOps.nearestFreeCell(items, Cell(1, 1), 5, 5))
+    fun `removal in PACKED pulls items back across a page boundary`() {
+        val many = (0 until cols * rows + 2).map { info("app%02d".format(it)) }
+        val state = LayoutEngine.seedPacked(many, cols, rows)
+        assertEquals(2, state.itemsOn(1).size)
 
-        // Dropping onto an occupied cell lands adjacent, not across the page.
-        val landed = WorkspaceOps.nearestFreeCell(items, Cell(2, 2), 5, 5)
-        assertNotNull(landed)
-        assertTrue((landed!!.x - 2) * (landed.x - 2) + (landed.y - 2) * (landed.y - 2) <= 2)
+        val victim = state.itemsOn(0).minByOrNull { LayoutEngine.flowIndex(it.cell, cols, rows) }!!
+        val next = LayoutEngine.remove(state, victim.id, HomeModel.PACKED, cols, rows)
+
+        // One item cascades back from page 2; page 1 is full again.
+        assertEquals(cols * rows, next.itemsOn(0).size)
+        assertEquals(1, next.itemsOn(1).size)
     }
 
     @Test
-    fun `nearestFreeCell ignores the item being moved`() {
-        val items = listOf(app("a", 2, 2))
-        assertEquals(
-            Cell(2, 2),
-            WorkspaceOps.nearestFreeCell(items, Cell(2, 2), 5, 5, ignoreId = "a"),
-        )
+    fun `compact flows around a pinned widget without moving it`() {
+        val widget = WidgetItem("w", 0, Cell(0, 0, 4, 2), appWidgetId = 7, providerFlat = "p/w")
+        val apps = (0 until 5).map { app("a$it", 0, LayoutEngine.cellAtFlowIndex(it, cols, rows)) }
+        val state = WorkspaceState(items = apps + widget, pageCount = 1)
+
+        val next = LayoutEngine.compact(state, cols, rows)
+
+        val movedWidget = next.items.filterIsInstance<WidgetItem>().single()
+        assertEquals(Cell(0, 0, 4, 2), movedWidget.cell)
+        // No flowing item may overlap the widget's two rows.
+        next.items.filterIsInstance<AppItem>().forEach { assertTrue(it.cell.y >= 2) }
     }
 
     @Test
-    fun `canPlace rejects cells that leave the grid`() {
-        assertFalse(WorkspaceOps.canPlace(emptyList(), Cell(3, 0, 2, 1), columns = 4, rows = 4))
-        assertTrue(WorkspaceOps.canPlace(emptyList(), Cell(2, 0, 2, 1), columns = 4, rows = 4))
-        assertFalse(WorkspaceOps.canPlace(emptyList(), Cell(-1, 0), columns = 4, rows = 4))
+    fun `FREEFORM removal leaves every other item exactly where it was`() {
+        val a = app("a", 0, Cell(1, 1))
+        val b = app("b", 0, Cell(3, 4))
+        val state = WorkspaceState(items = listOf(a, b), pageCount = 1)
+
+        val next = LayoutEngine.remove(state, "a", HomeModel.FREEFORM, cols, rows)
+
+        assertNull(next.find("a"))
+        assertEquals(Cell(3, 4), next.find("b")!!.cell)
     }
 
     // ------------------------------------------------------------------ moving
 
     @Test
-    fun `move relocates an item into another container`() {
-        val start = state(app("a", 0, 0))
-        val moved = WorkspaceOps.move(start, "a", ItemContainer.Dock, Cell(1, 0))
+    fun `PACKED move is a reorder - dropping at flow position zero shifts the rest up`() {
+        val state = LayoutEngine.seedPacked(listOf(info("a"), info("b"), info("c")), cols, rows)
+        val byFlow = state.items.sortedBy { LayoutEngine.flowIndex(it.cell, cols, rows) }
+        val last = byFlow.last()
 
-        assertTrue(moved.pages.first().items.isEmpty())
-        assertEquals(1, moved.dock.size)
-        assertEquals(Cell(1, 0), moved.dock.first().cell)
+        val next = LayoutEngine.move(
+            state, last.id, targetPage = 0,
+            targetCell = LayoutEngine.cellAtFlowIndex(0, cols, rows),
+            model = HomeModel.PACKED, columns = cols, rows = rows,
+        )
+
+        val order = next.items.sortedBy { LayoutEngine.flowIndex(it.cell, cols, rows) }.map { it.id }
+        assertEquals(last.id, order.first())
+        assertEquals(3, next.items.size)
     }
 
     @Test
-    fun `locate finds items on pages, in the dock and inside folders`() {
-        val folder = FolderItem(
-            id = "f",
-            cell = Cell(1, 0),
-            items = listOf(app("child", 0, 0)),
-        )
-        val start = WorkspaceState(
-            pages = listOf(PageState("p0", listOf(app("a", 0, 0), folder))),
-            dock = listOf(app("d", 0, 0)),
-        )
+    fun `FREEFORM move lands on the requested cell when free and the nearest when not`() {
+        val a = app("a", 0, Cell(0, 4))
+        val b = app("b", 0, Cell(2, 2))
+        val state = WorkspaceState(items = listOf(a, b), pageCount = 1)
 
-        assertEquals(ItemContainer.Page("p0"), WorkspaceOps.locate(start, "a")?.container)
-        assertEquals(ItemContainer.Dock, WorkspaceOps.locate(start, "d")?.container)
-        assertEquals(ItemContainer.Folder("f"), WorkspaceOps.locate(start, "child")?.container)
-        assertNull(WorkspaceOps.locate(start, "missing"))
+        val free = LayoutEngine.move(state, "a", 0, Cell(3, 0), HomeModel.FREEFORM, cols, rows)
+        assertEquals(Cell(3, 0), free.find("a")!!.cell)
+
+        val onto = LayoutEngine.move(free, "a", 0, Cell(2, 2), HomeModel.FREEFORM, cols, rows)
+        val landed = onto.find("a")!!.cell
+        assertTrue(landed != Cell(2, 2))
+        assertTrue(abs(landed.x - 2) <= 1 && abs(landed.y - 2) <= 1)
+    }
+
+    private fun abs(v: Int) = if (v < 0) -v else v
+
+    @Test
+    fun `moving to a later page grows the page count`() {
+        val state = WorkspaceState(items = listOf(app("a", 0, Cell(0, 4))), pageCount = 1)
+        val next = LayoutEngine.move(state, "a", 1, Cell(0, 4), HomeModel.FREEFORM, cols, rows)
+        assertEquals(2, next.pageCount)
+        assertEquals(1, next.find("a")!!.page)
     }
 
     @Test
-    fun `reorder renumbers a linear container`() {
-        val start = WorkspaceState(
-            pages = listOf(PageState("p0")),
-            dock = listOf(app("a", 0, 0), app("b", 1, 0), app("c", 2, 0)),
-        )
-        val reordered = WorkspaceOps.reorder(start, ItemContainer.Dock, fromIndex = 2, toIndex = 0)
+    fun `swap exchanges two one-by-one items and refuses widgets`() {
+        val a = app("a", 0, Cell(0, 4))
+        val b = app("b", 0, Cell(3, 3))
+        val w = WidgetItem("w", 0, Cell(0, 0, 2, 2), 1, "p/w")
+        val state = WorkspaceState(items = listOf(a, b, w), pageCount = 1)
 
-        assertEquals(listOf("c", "a", "b"), reordered.dock.map { it.id })
-        assertEquals(listOf(0, 1, 2), reordered.dock.map { it.cell.x })
+        val swapped = LayoutEngine.swap(state, "a", "b")
+        assertEquals(Cell(3, 3), swapped.find("a")!!.cell)
+        assertEquals(Cell(0, 4), swapped.find("b")!!.cell)
+
+        assertEquals(swapped, LayoutEngine.swap(swapped, "a", "w"))
     }
 
-    // ------------------------------------------------------------------ folders
+    // ------------------------------------------------------------------ folders (§6)
 
     @Test
-    fun `combining two apps creates a folder in place`() {
-        val start = state(app("a", 0, 0), app("b", 1, 0))
-        val combined = WorkspaceOps.combine(start, targetId = "a", sourceId = "b") { "Folder" }
+    fun `dropping one app on another makes a folder in the target's cell`() {
+        val a = app("a", 0, Cell(0, 4))
+        val b = app("b", 0, Cell(1, 4))
+        val state = WorkspaceState(items = listOf(a, b), pageCount = 1)
 
-        val items = combined.pages.first().items
-        assertEquals(1, items.size)
-        val folder = items.first() as FolderItem
+        val next = LayoutEngine.combine(state, "a", "b", HomeModel.FREEFORM, cols, rows)
+
+        val folder = next.items.filterIsInstance<FolderItem>().single()
+        assertEquals(Cell(0, 4), folder.cell)
         assertEquals(2, folder.items.size)
-        assertEquals(Cell(0, 0), folder.cell)
+        assertNull(next.items.firstOrNull { it.id == "b" })
     }
 
     @Test
-    fun `combining into an existing folder grows it without duplicating`() {
-        val folder = FolderItem(id = "f", cell = Cell(0, 0), items = listOf(app("a", 0, 0, "a")))
-        val start = WorkspaceState(pages = listOf(PageState("p0", listOf(folder, app("b", 1, 0, "b")))))
+    fun `dropping on a folder grows it without duplicates`() {
+        val a = app("a", 0, Cell(0, 4))
+        val b = app("b", 0, Cell(1, 4))
+        val c = app("c", 0, Cell(2, 4))
+        var state = WorkspaceState(items = listOf(a, b, c), pageCount = 1)
+        state = LayoutEngine.combine(state, "a", "b", HomeModel.FREEFORM, cols, rows)
+        val folderId = state.items.filterIsInstance<FolderItem>().single().id
 
-        val grown = WorkspaceOps.combine(start, targetId = "f", sourceId = "b") { "Folder" }
-        val result = grown.pages.first().items.filterIsInstance<FolderItem>().single()
-        assertEquals(2, result.items.size)
+        state = LayoutEngine.combine(state, folderId, "c", HomeModel.FREEFORM, cols, rows)
+        assertEquals(3, state.items.filterIsInstance<FolderItem>().single().items.size)
 
-        // Dropping the same app again must not duplicate it.
-        val again = WorkspaceOps.combine(
-            WorkspaceOps.add(grown, ItemContainer.Page("p0"), app("b2", 2, 0, "b")),
-            targetId = "f",
-            sourceId = "b2",
-        ) { "Folder" }
-        assertEquals(2, again.pages.first().items.filterIsInstance<FolderItem>().single().items.size)
+        // Re-adding an app with the same key must not duplicate it.
+        val clone = app("c2", 0, Cell(3, 4)).copy(key = key("c"))
+        state = state.copy(items = state.items + clone)
+        state = LayoutEngine.combine(state, folderId, "c2", HomeModel.FREEFORM, cols, rows)
+        assertEquals(3, state.items.filterIsInstance<FolderItem>().single().items.size)
     }
 
     @Test
-    fun `combining an item with itself is a no-op`() {
-        val start = state(app("a", 0, 0))
-        assertEquals(start, WorkspaceOps.combine(start, targetId = "a", sourceId = "a"))
-    }
-
-    @Test
-    fun `extracting the second-to-last child dissolves the folder`() {
+    fun `a folder left with one child dissolves back to an icon`() {
         val folder = FolderItem(
-            id = "f",
-            cell = Cell(0, 0),
-            items = listOf(app("x", 0, 0, "x"), app("y", 1, 0, "y")),
+            "f", 0, Cell(1, 4), "Pair",
+            items = listOf(app("x", 0, Cell(0, 0)), app("y", 0, Cell(0, 0))),
         )
-        val start = WorkspaceState(pages = listOf(PageState("p0", listOf(folder))))
+        val state = WorkspaceState(items = listOf(folder), pageCount = 1)
 
-        val extracted = WorkspaceOps.extractFromFolder(
-            state = start,
-            folderId = "f",
-            itemId = "x",
-            target = ItemContainer.Page("p0"),
-            cell = Cell(2, 0),
-        )
+        val next = LayoutEngine.move(state, "x", 0, Cell(3, 4), HomeModel.FREEFORM, cols, rows)
 
-        val items = extracted.pages.first().items
-        assertEquals(2, items.size)
-        assertTrue("the one-item folder should have dissolved", items.none { it is FolderItem })
+        assertTrue(next.items.none { it is FolderItem })
+        assertNotNull(next.find("x"))
+        assertNotNull(next.find("y"))
+        assertEquals(Cell(1, 4), next.find("y")!!.cell)
     }
 
     @Test
-    fun `dissolveThinFolders drops empty folders and unwraps single-item ones`() {
-        val start = WorkspaceState(
-            pages = listOf(
-                PageState(
-                    "p0",
-                    listOf(
-                        FolderItem(id = "empty", cell = Cell(0, 0)),
-                        FolderItem(id = "one", cell = Cell(1, 0), items = listOf(app("solo", 0, 0))),
-                        FolderItem(
-                            id = "two",
-                            cell = Cell(2, 0),
-                            items = listOf(app("p", 0, 0, "p"), app("q", 1, 0, "q")),
-                        ),
-                    ),
-                ),
-            ),
-        )
-
-        val items = WorkspaceOps.dissolveThinFolders(start).pages.first().items
-        assertEquals(2, items.size)
-        assertTrue(items.any { it is AppItem && it.id == "solo" && it.cell == Cell(1, 0) })
-        assertTrue(items.any { it is FolderItem && it.id == "two" })
-    }
-
-    @Test
-    fun `autoLabel names a folder after the dominant category`() {
-        val items = listOf(app("a", 0, 0, "a"), app("b", 1, 0, "b"), app("c", 2, 0, "c"))
-        val categories = mapOf(
-            key("a") to AppCategory.GAMES,
-            key("b") to AppCategory.GAMES,
-            key("c") to AppCategory.FINANCE,
-        )
-        assertEquals("Games", WorkspaceOps.autoLabel(items) { categories.getValue(it) })
-        assertEquals("Folder", WorkspaceOps.autoLabel(emptyList()) { AppCategory.OTHER })
-    }
-
-    // ------------------------------------------------------------------ removal
-
-    @Test
-    fun `remove strips an item from pages, dock and folder contents`() {
+    fun `rename sticks`() {
         val folder = FolderItem(
-            id = "f",
-            cell = Cell(1, 0),
-            items = listOf(app("child", 0, 0), app("child2", 1, 0, "other")),
+            "f", 0, Cell(0, 4), "",
+            items = listOf(app("x", 0, Cell(0, 0)), app("y", 0, Cell(0, 0))),
         )
-        val start = WorkspaceState(
-            pages = listOf(PageState("p0", listOf(app("a", 0, 0), folder))),
-            dock = listOf(app("d", 0, 0)),
-        )
+        val state = WorkspaceState(items = listOf(folder), pageCount = 1)
+        val next = LayoutEngine.renameFolder(state, "f", "Work")
+        assertEquals("Work", (next.find("f") as FolderItem).label)
+    }
 
-        assertNull(WorkspaceOps.locate(WorkspaceOps.remove(start, "child"), "child"))
-        assertNull(WorkspaceOps.locate(WorkspaceOps.remove(start, "d"), "d"))
-        assertNull(WorkspaceOps.locate(WorkspaceOps.remove(start, "f"), "f"))
+    // ------------------------------------------------------------------ model switches (§5)
+
+    @Test
+    fun `switching to PACKED appends missing apps without moving placed ones`() {
+        val placed = app("placed", 0, Cell(2, 2))
+        val state = WorkspaceState(items = listOf(placed), pageCount = 1)
+        val all = listOf(info("placed"), info("alpha"), info("zeta"))
+
+        val next = LayoutEngine.ensureAllApps(state, all, cols, rows)
+
+        assertEquals(3, next.allApps().size)
+        assertTrue(next.containsApp(key("alpha")))
+        assertTrue(next.containsApp(key("zeta")))
     }
 
     @Test
-    fun `removeAppEverywhere clears every instance of an uninstalled app`() {
-        val target = key("gone")
-        val start = WorkspaceState(
-            pages = listOf(
-                PageState(
-                    "p0",
-                    listOf(
-                        AppItem("a", Cell(0, 0), target),
-                        FolderItem(
-                            "f",
-                            Cell(1, 0),
-                            items = listOf(
-                                AppItem("b", Cell(0, 0), target),
-                                AppItem("c", Cell(1, 0), key("stays")),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            dock = listOf(AppItem("d", Cell(0, 0), target)),
-        )
+    fun `appendApp lands at the end of the flow and overflows to a new page`() {
+        var state = LayoutEngine.seedPacked((0 until cols * rows).map { info("app%02d".format(it)) }, cols, rows)
+        assertEquals(1, state.pageCount)
 
-        val cleaned = WorkspaceOps.removeAppEverywhere(start, target)
-        assertTrue(WorkspaceOps.allAppItems(cleaned).none { it.key == target })
-        assertEquals(1, WorkspaceOps.allAppItems(cleaned).size)
+        state = LayoutEngine.appendApp(state, key("fresh"), cols, rows)
+        assertEquals(2, state.pageCount)
+        assertEquals(1, state.itemsOn(1).size)
+
+        // Appending an app already on the grid is a no-op.
+        assertEquals(state, LayoutEngine.appendApp(state, key("fresh"), cols, rows))
     }
 
-    // ------------------------------------------------------------------ pages
+    // ------------------------------------------------------------------ misc
 
     @Test
-    fun `pages can be added, moved and removed but never all removed`() {
-        var s = WorkspaceState(pages = listOf(PageState("p0")))
-        s = WorkspaceOps.addPage(s)
-        assertEquals(2, s.pageCount)
+    fun `trimTrailingEmptyPages keeps at least one page`() {
+        val state = WorkspaceState(items = emptyList(), pageCount = 3)
+        assertEquals(1, LayoutEngine.trimTrailingEmptyPages(state).pageCount)
 
-        s = WorkspaceOps.add(s, ItemContainer.Page(s.pages[1].id), app("a", 0, 0))
-        val secondId = s.pages[1].id
-        s = WorkspaceOps.movePage(s, from = 1, to = 0)
-        assertEquals(secondId, s.pages.first().id)
-
-        s = WorkspaceOps.removePage(s, secondId)
-        assertEquals(1, s.pageCount)
-
-        // The last page is never removable - the user must always have a home screen.
-        val onlyPage = s.pages.first().id
-        assertEquals(1, WorkspaceOps.removePage(s, onlyPage).pageCount)
+        val withItem = WorkspaceState(items = listOf(app("a", 1, Cell(0, 4))), pageCount = 4)
+        assertEquals(2, LayoutEngine.trimTrailingEmptyPages(withItem).pageCount)
     }
 
     @Test
-    fun `trimTrailingEmptyPages keeps the first page and drops trailing blanks`() {
-        val s = WorkspaceState(
-            pages = listOf(
-                PageState("p0", listOf(app("a", 0, 0))),
-                PageState("p1"),
-                PageState("p2"),
-            ),
-        )
-        assertEquals(1, WorkspaceOps.trimTrailingEmptyPages(s).pageCount)
-        assertEquals(1, WorkspaceOps.trimTrailingEmptyPages(WorkspaceState(pages = listOf(PageState("p0")))).pageCount)
-    }
-
-    // ------------------------------------------------------------------ reflow
-
-    @Test
-    fun `reflow spills overflow onto new pages when the grid shrinks`() {
-        val items = (0 until 9).map { app("a$it", it % 3, it / 3) }
-        val start = WorkspaceState(pages = listOf(PageState("p0", items)), initialized = true)
-
-        val reflowed = WorkspaceOps.reflow(start, columns = 2, rows = 2, dockColumns = 4)
-
-        // Nine icons cannot fit in a single 2x2 page, so pages are added rather than icons lost.
-        assertTrue(reflowed.pageCount >= 3)
-        assertEquals(9, reflowed.pages.sumOf { it.items.size })
-        reflowed.pages.forEach { page ->
-            page.items.forEach { item ->
-                assertTrue(item.cell.right <= 2 && item.cell.bottom <= 2)
-            }
-        }
+    fun `canPlace rejects out-of-grid and overlapping cells`() {
+        val state = WorkspaceState(items = listOf(app("a", 0, Cell(1, 1))), pageCount = 1)
+        assertFalse(LayoutEngine.canPlace(state, 0, Cell(-1, 0), cols, rows))
+        assertFalse(LayoutEngine.canPlace(state, 0, Cell(3, 0, 2, 1), cols, rows))
+        assertFalse(LayoutEngine.canPlace(state, 0, Cell(1, 1), cols, rows))
+        assertTrue(LayoutEngine.canPlace(state, 0, Cell(1, 1), cols, rows, ignoreId = "a"))
     }
 
     @Test
-    fun `reflow clamps the dock to its column count`() {
-        val start = WorkspaceState(
-            pages = listOf(PageState("p0")),
-            dock = (0 until 6).map { app("d$it", it, 0) },
-        )
-        val reflowed = WorkspaceOps.reflow(start, columns = 5, rows = 5, dockColumns = 4)
-        assertEquals(4, reflowed.dock.size)
-        assertEquals(listOf(0, 1, 2, 3), reflowed.dock.map { it.cell.x })
-    }
-
-    @Test
-    fun `reflow keeps widget spans intact`() {
-        val widget = WidgetItem(id = "w", cell = Cell(0, 0, 2, 2), appWidgetId = 7, providerFlat = "p/w")
-        val start = WorkspaceState(pages = listOf(PageState("p0", listOf(widget))))
-
-        val reflowed = WorkspaceOps.reflow(start, columns = 5, rows = 5, dockColumns = 4)
-        val result = reflowed.pages.flatMap { it.items }.filterIsInstance<WidgetItem>().single()
-        assertEquals(2, result.cell.spanX)
-        assertEquals(2, result.cell.spanY)
-        assertEquals(7, result.appWidgetId)
-    }
-
-    // ------------------------------------------------------------------ bootstrap
-
-    private fun info(pkg: String, label: String, system: Boolean = false) = AppInfo(
-        key = AppKey(pkg, ".Main"),
-        label = label,
-        searchTokens = label.lowercase(),
-        isSystemApp = system,
-        isWorkProfile = false,
-        firstInstallTime = 0L,
-        lastUpdateTime = 0L,
-        category = AppCategory.OTHER,
-    )
-
-    @Test
-    fun `defaultLayout fills the dock with known essentials and pages the rest`() {
-        val apps = listOf(
-            info("com.google.android.dialer", "Phone"),
-            info("com.google.android.apps.messaging", "Messages"),
-            info("com.android.chrome", "Chrome"),
-            info("com.google.android.GoogleCamera", "Camera"),
-        ) + (0 until 12).map { info("com.example.app$it", "App $it") }
-
-        val layout = WorkspaceOps.defaultLayout(apps, columns = 4, rows = 2, dockColumns = 4)
-
-        assertTrue(layout.initialized)
-        assertEquals(4, layout.dock.size)
-        assertEquals(
-            listOf(
-                "com.google.android.dialer",
-                "com.google.android.apps.messaging",
-                "com.android.chrome",
-                "com.google.android.GoogleCamera",
-            ),
-            layout.dock.filterIsInstance<AppItem>().map { it.key.packageName },
-        )
-        // Every remaining app is placed exactly once, across as many 4x2 pages as needed.
-        assertEquals(12, layout.pages.sumOf { it.items.size })
-        assertEquals(12, WorkspaceOps.allAppItems(layout).size - layout.dock.size)
-        layout.pages.forEach { page ->
-            assertTrue(page.items.size <= 8)
-            assertEquals(page.items.size, page.items.map { it.cell }.distinct().size)
-        }
-    }
-
-    @Test
-    fun `defaultLayout on an empty device still yields one page`() {
-        val layout = WorkspaceOps.defaultLayout(emptyList(), columns = 5, rows = 5, dockColumns = 4)
-        assertEquals(1, layout.pageCount)
-        assertTrue(layout.dock.isEmpty())
-    }
-
-    @Test
-    fun `autoPlace ignores apps already on the workspace and adds pages when full`() {
-        val existing = key("known")
-        val start = WorkspaceState(
-            pages = listOf(PageState("p0", listOf(AppItem("a", Cell(0, 0), existing)))),
-            initialized = true,
-        )
-
-        val unchanged = WorkspaceOps.autoPlace(start, listOf(existing), columns = 1, rows = 1)
-        assertEquals(1, WorkspaceOps.allAppItems(unchanged).size)
-
-        val grown = WorkspaceOps.autoPlace(start, listOf(key("fresh")), columns = 1, rows = 1)
-        assertEquals(2, grown.pageCount)
-        assertEquals(2, WorkspaceOps.allAppItems(grown).size)
-    }
-
-    @Test
-    fun `newId never collides`() {
-        val ids = (0 until 500).map { WorkspaceOps.newId("app") }
+    fun `ids never collide`() {
+        val ids = (0 until 500).map { LayoutEngine.newId("app") }
         assertEquals(ids.size, ids.distinct().size)
     }
 }

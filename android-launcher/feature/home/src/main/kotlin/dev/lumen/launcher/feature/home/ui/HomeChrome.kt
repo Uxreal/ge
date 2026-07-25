@@ -1,0 +1,136 @@
+package dev.lumen.launcher.feature.home.ui
+
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import dev.lumen.launcher.core.design.interaction.LocalHaptics
+import dev.lumen.launcher.core.design.interaction.launcherPressable
+import dev.lumen.launcher.core.design.motion.LocalMotion
+import dev.lumen.launcher.core.design.shape.Superellipse
+import dev.lumen.launcher.core.design.theme.Depth
+import dev.lumen.launcher.core.design.theme.LocalTypography
+import kotlinx.coroutines.launch
+
+/** Page dots. The current dot grows with `micro`; tapping a dot jumps with `page`. */
+@Composable
+internal fun PageIndicator(pagerState: PagerState, modifier: Modifier = Modifier) {
+    val motion = LocalMotion.current
+    val scope = rememberCoroutineScope()
+    Row(
+        modifier = modifier.padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pagerState.pageCount) { index ->
+            val active = pagerState.currentPage == index
+            val diameter by animateDpAsState(
+                targetValue = if (active) 7.dp else 5.dp,
+                animationSpec = motion.micro(),
+                label = "dot",
+            )
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Page ${index + 1} of ${pagerState.pageCount}"
+                    }
+                    .pointerInput(index) {
+                        detectTapGestures {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index, animationSpec = motion.page())
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(diameter)
+                        .drawWithCache {
+                            val dot = Superellipse.path(size, size.minDimension / 2f, 2f)
+                            onDrawBehind {
+                                drawPath(dot, Color.White.copy(alpha = if (active) 0.95f else 0.45f))
+                            }
+                        },
+                )
+            }
+        }
+    }
+}
+
+/** Wiggle-mode actions. Small pill chips: Widgets, Settings, Done. */
+@Composable
+internal fun EditModeBar(
+    onWidgets: () -> Unit,
+    onSettings: () -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        EditChip("Widgets", onWidgets)
+        EditChip("Settings", onSettings)
+        EditChip("Done", onDone, emphasized = true)
+    }
+}
+
+@Composable
+private fun EditChip(label: String, onClick: () -> Unit, emphasized: Boolean = false) {
+    val typography = LocalTypography.current
+    val haptics = LocalHaptics.current
+    val background = if (emphasized) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f)
+    }
+    val foreground = if (emphasized) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(
+        modifier = Modifier
+            .semantics { role = Role.Button }
+            .drawWithCache {
+                val pill = Superellipse.path(size, size.height / 2f)
+                onDrawBehind {
+                    drawPath(pill, background)
+                    drawPath(
+                        pill,
+                        Depth.HairlineColor,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f),
+                    )
+                }
+            }
+            .launcherPressable(onClick = {
+                haptics.state()
+                onClick()
+            })
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+    ) {
+        BasicText(text = label, style = typography.tileLabel.copy(color = foreground))
+    }
+}

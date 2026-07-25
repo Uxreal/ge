@@ -1,0 +1,234 @@
+package dev.lumen.launcher.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.lumen.launcher.BuildConfig
+import dev.lumen.launcher.MainActivity
+import dev.lumen.launcher.core.data.model.HomeModel
+import dev.lumen.launcher.core.data.system.DefaultHome
+import dev.lumen.launcher.core.design.interaction.HapticIntensity
+import dev.lumen.launcher.core.design.motion.MotionTokens
+import dev.lumen.launcher.core.design.surface.LocalBackdropCapture
+import dev.lumen.launcher.core.design.surface.backdropSource
+import dev.lumen.launcher.core.design.surface.rememberBackdropCapture
+import dev.lumen.launcher.core.design.theme.LumenTheme
+import dev.lumen.launcher.core.design.theme.LumenThemeConfig
+import dev.lumen.launcher.core.design.theme.LumenTypography
+import dev.lumen.launcher.core.design.theme.ThemeMode
+import dev.lumen.launcher.feature.drawer.DrawerScreen
+import dev.lumen.launcher.feature.drawer.DrawerViewModel
+import dev.lumen.launcher.feature.home.HomeViewModel
+import dev.lumen.launcher.feature.home.ui.HomeScreen
+import dev.lumen.launcher.feature.home.ui.HomeState
+import dev.lumen.launcher.feature.settings.SettingsScreen
+import dev.lumen.launcher.feature.settings.SettingsViewModel
+import dev.lumen.launcher.feature.widgets.WidgetFrame
+import dev.lumen.launcher.feature.widgets.WidgetPickerSheet
+import dev.lumen.launcher.ui.onboarding.OnboardingOverlay
+
+/** Which full-screen surface sits above the home grid. At most one. */
+private enum class Overlay { NONE, DRAWER, SETTINGS, WIDGET_PICKER }
+
+/**
+ * Composition root. The home surface (the thing frosted sheets refract) lives inside the backdrop
+ * capture; the drawer, settings, picker and onboarding sit above it as lenses.
+ */
+@Composable
+fun LauncherRoot(
+    activity: MainActivity,
+    homeVm: HomeViewModel,
+    drawerVm: DrawerViewModel,
+    settingsVm: SettingsViewModel,
+) {
+    val prefs by homeVm.prefs.collectAsStateWithLifecycle()
+
+    val themeConfig = remember(prefs) {
+        LumenThemeConfig(
+            mode = when (prefs.themeMode) {
+                "LIGHT" -> ThemeMode.LIGHT
+                "DARK" -> ThemeMode.DARK
+                "TRUE_BLACK" -> ThemeMode.TRUE_BLACK
+                else -> ThemeMode.AUTO
+            },
+            typography = LumenTypography(),
+            motion = MotionTokens(speed = prefs.motionSpeed, reduceMotion = prefs.reduceMotion),
+            hapticIntensity = runCatching { HapticIntensity.valueOf(prefs.hapticIntensity) }
+                .getOrDefault(HapticIntensity.STANDARD),
+            smoothness = prefs.smoothness,
+        )
+    }
+
+    LumenTheme(config = themeConfig) {
+        val capture = rememberBackdropCapture()
+        val homeState = remember { HomeState() }
+        var overlay by remember { mutableStateOf(Overlay.NONE) }
+        val view = LocalView.current
+
+        // §5 home-press sequence: close sheet → exit wiggle → page 1. One step per press.
+        LaunchedEffect(activity) {
+            for (unit in activity.homePresses) {
+                if (overlay != Overlay.NONE) {
+                    overlay = Overlay.NONE
+                } else {
+                    homeState.onHomePress()
+                }
+            }
+        }
+
+        // Widget bind/configure results place the item once the system flows finish.
+        var pendingWidgetLabel by remember { mutableStateOf("") }
+        var pendingProviderFlat by remember { mutableStateOf("") }
+        var pendingSpan by remember { mutableStateOf(1 to 1) }
+        LaunchedEffect(activity) {
+            for (result in activity.widgetFlowResults) {
+                if (result != null && pendingProviderFlat.isNotEmpty()) {
+                    homeVm.placeWidget(
+                        appWidgetId = result,
+                        providerFlat = pendingProviderFlat,
+                        label = pendingWidgetLabel,
+                        spanX = pendingSpan.first,
+                        spanY = pendingSpan.second,
+                    )
+                }
+                pendingProviderFlat = ""
+            }
+        }
+
+        BackHandler(enabled = true) {
+            when {
+                overlay != Overlay.NONE -> overlay = Overlay.NONE
+                homeState.onBack() -> Unit
+                else -> Unit // A launcher consumes Back at the root; there is nowhere to go.
+            }
+        }
+
+        CompositionLocalProvider(LocalBackdropCapture provides capture) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // ---- refractable content: the home surface --------------------------------
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .backdropSource(capture),
+                ) {
+                    HomeScreen(
+                        vm = homeVm,
+                        homeState = homeState,
+                        onPagerChanged = { page, offset, count ->
+                            // §5 wallpaper offsets, scaled by the user's parallax multiplier.
+                            val fraction = if (count > 1) {
+                                ((page + offset) / (count - 1f)).coerceIn(0f, 1f)
+                            } else {
+                                0.5f
+                            }
+                            val scaled = 0.5f + (fraction - 0.5f) * prefs.parallax
+                            homeVm.wallpaper.setOffsets(view.windowToken, scaled)
+                        },
+                        onRequestWidgetPicker = { overlay = Overlay.WIDGET_PICKER },
+                        onRequestSettings = { overlay = Overlay.SETTINGS },
+                        onReleaseWidget = { id -> activity.widgetHost.releaseId(id) },
+                        widgetContent = { item, itemModifier, editing, onResize ->
+                            WidgetFrame(
+                                hostManager = activity.widgetHost,
+                                item = item,
+                                modifier = itemModifier,
+                                editing = editing,
+                                onResize = onResize,
+                            )
+                        },
+                    )
+                }
+
+                // ---- lenses ---------------------------------------------------------------
+                DrawerScreen(
+                    vm = drawerVm,
+                    visible = overlay == Overlay.DRAWER,
+                    onDismiss = { overlay = Overlay.NONE },
+                )
+
+                SettingsScreen(
+                    vm = settingsVm,
+                    visible = overlay == Overlay.SETTINGS,
+                    onDismiss = { overlay = Overlay.NONE },
+                    onSetHomeModel = { model -> homeVm.setModel(model) },
+                    onRequestDefaultHome = {
+                        val intent = DefaultHome.requestRoleIntent(activity)
+                        if (intent != null) {
+                            runCatching { activity.startActivity(intent) }
+                        } else {
+                            DefaultHome.openHomeSettings(activity)
+                        }
+                    },
+                    versionName = BuildConfig.VERSION_NAME,
+                )
+
+                WidgetPickerSheet(
+                    hostManager = activity.widgetHost,
+                    visible = overlay == Overlay.WIDGET_PICKER,
+                    onPick = { provider ->
+                        pendingWidgetLabel = activity.widgetHost.labelOf(provider)
+                        pendingProviderFlat = provider.provider.flattenToString()
+                        pendingSpan = activity.widgetHost.spanFor(provider, 180f, 220f)
+                        overlay = Overlay.NONE
+                        activity.startWidgetFlow(provider)
+                    },
+                    onDismiss = { overlay = Overlay.NONE },
+                )
+
+                // FREEFORM: swipe up from the bottom edge opens the drawer.
+                if (prefs.homeModel == HomeModel.FREEFORM && overlay == Overlay.NONE) {
+                    DrawerEdge(
+                        onOpen = { overlay = Overlay.DRAWER },
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                    )
+                }
+
+                if (prefs.homeModel == null) {
+                    OnboardingOverlay(
+                        onChooseModel = { model ->
+                            homeVm.setModel(model)
+                            val intent = DefaultHome.requestRoleIntent(activity)
+                            if (intent != null) runCatching { activity.startActivity(intent) }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A 24dp strip along the bottom edge that catches the upward fling into the drawer. Deliberately
+ * narrow so it never competes with grid drags or the pager.
+ */
+@Composable
+private fun DrawerEdge(onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .pointerInput(onOpen) {
+                detectVerticalDragGestures { change, dragAmount ->
+                    if (dragAmount < -18f) {
+                        change.consume()
+                        onOpen()
+                    }
+                }
+            },
+    )
+}

@@ -3,7 +3,7 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: module restructure complete; §3 tokens implemented and unit-tested (Phase 1 in progress).
+Last updated: Phase 1 feature-complete in code; compiles and unit tests green; device verification pending.
 
 ---
 
@@ -20,15 +20,15 @@ Last updated: module restructure complete; §3 tokens implemented and unit-teste
 
 | Criterion (§13) | State |
 |---|---|
-| Set as default and survive 20 reboots + 50 force-stops, layout intact | Not verified |
-| Drag/drop hits every timing in §5 | Not implemented |
-| Cold start → first drawn frame < 350ms, proven by Macrobenchmark | Not measured |
-| Zero main-thread icon decodes, asserted in debug | Not implemented |
-| Grid + both home models (`PACKED`, `FREEFORM`) | Not implemented |
-| Drawer, folders, widget hosting | Not implemented |
-| Wallpaper offsets | Not implemented |
-| Settings skeleton | Not implemented |
-| Room persistence | Not implemented |
+| Set as default and survive 20 reboots + 50 force-stops, layout intact | **Not verified** — needs a device; persistence is transactional Room with an Application-time pre-warm |
+| Drag/drop hits every timing in §5 | Implemented at the exact values (280/200/520/400/600ms, lift 1.08, morph-with-velocity settle, no-haptic invalid drop) — feel unverified on hardware |
+| Cold start → first drawn frame < 350ms, proven by Macrobenchmark | **Not measured** — `:benchmark:StartupBenchmark` exists and compiles; needs a device |
+| Zero main-thread icon decodes, asserted in debug | **Done** — `IconCache` throws on any main-thread decode in debuggable builds |
+| Grid + both home models (`PACKED`, `FREEFORM`) | **Done in code** — bottom-gravity flow order, PACKED reflow around pinned widgets, FREEFORM never moves placed items; 21 engine tests |
+| Drawer, folders, widget hosting | **Done in code** — drawer with A–Z rail/suggestions/type-to-launch; folders with dwell-create, rename, dissolve; real `AppWidgetHost` with bind/configure/resize |
+| Wallpaper offsets | **Done in code** — `setWallpaperOffsets` from the pager, user parallax multiplier 0–1.5 |
+| Settings skeleton | **Done in code** — Compose (not PreferenceScreen), collapsing header via cross-fade, model/columns/theme/motion/haptics/shape |
+| Room persistence | **Done in code** — transactional `replaceAll`, conflated writes, destructive-migration fallback so a corrupt DB can never crash-loop the home screen |
 | §3 design tokens as the single source of truth | **Done** — implemented in `:core:design`, 21 unit tests pass |
 
 ## What exists right now
@@ -59,10 +59,13 @@ by dependency declarations, and `:core:data` deliberately does not depend on `:c
   blur on 31–32, translucency on 30, per-`SurfaceRole` tokens, and redraw tickets so a still screen
   costs nothing.
 
-**Ported, not yet reworked.** `:core:data` holds the salvaged `LauncherApps` indexing and usage
-tracking; `:feature:home` holds the pure layout algebra and its 30 tests. Both still carry pre-spec
-package names and APIs and do not compile yet — that is the next task, alongside the Room schema,
-the Proto preferences, and the bottom-gravity grid.
+**Everything compiles and 42 unit tests pass** (21 design-token, 21 layout-engine). `:core:data`
+now carries the `LauncherApps` index (work profiles, incremental package reloads, category
+heuristics), the two-tier icon cache with the debug main-thread assertion, Room layout persistence,
+Proto DataStore prefs and usage stats, wallpaper offsets + luminance sampling for the contrast
+floor, and RoleManager default-home plumbing. `:feature:home` has the full §5 interaction set;
+`:feature:drawer`, `:feature:widgets`, `:feature:settings` and `:app` are wired end-to-end,
+including the widget bind/configure Activity flows and the §5 home-press ladder.
 
 ## Known gaps and honest omissions
 
@@ -74,7 +77,14 @@ the Proto preferences, and the bottom-gravity grid.
 * **Baseline Profiles are not wired yet.** The `:benchmark` module exists for Macrobenchmark, but the
   `androidx.baselineprofile` producer/consumer wiring needs a device to generate against, so it is
   deferred rather than configured to fail.
-* **`:core:data` and `:feature:home` do not compile yet** — they hold ported pre-spec code mid-rework.
-  Nothing in them is claimed as working.
+* **Nothing has run on a device yet.** It compiles, unit tests pass, and APKs assemble — but drag
+  feel, widget hosting against real providers, wallpaper reads on Samsung, and every §11 number
+  require hardware. Treat the first install as a test drive, not a verified release.
+* **Phase 1 partials, stated plainly:** no uninstall tombstones, no 20-step undo stack, no
+  multi-select drag, no pinch-in wiggle entry, shortcuts (`ShortcutItem`) render defensively but
+  nothing creates them yet, FREEFORM hover-to-swap resolves on drop rather than live-swapping at
+  200ms, and the second home-press does not yet open search (search is Phase 3).
+* **Release build is R8-minified but untested under minification on a device**; if anything breaks,
+  install the debug APK, which is behaviourally identical.
 * The pre-spec scaffold contained two §1.1 anti-defaults (page overshoot, blur everywhere). Both are
   removed as part of the restructure — see D10.
