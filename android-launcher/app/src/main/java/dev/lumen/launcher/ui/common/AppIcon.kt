@@ -31,6 +31,12 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -96,6 +102,19 @@ fun AppIcon(
 
     Column(
         modifier = modifier
+            // One node for TalkBack: the label is the icon's description, not two separate reads.
+            .semantics(mergeDescendants = true) {
+                contentDescription = resolvedLabel
+                role = Role.Button
+                onClick(label = "Open $resolvedLabel") {
+                    onClick(bounds)
+                    true
+                }
+                onLongClick(label = "Options") {
+                    onLongPress?.invoke(bounds)
+                    onLongPress != null
+                }
+            }
             .onGloballyPositioned { coords ->
                 val position = coords.positionInWindow()
                 bounds = Rect(

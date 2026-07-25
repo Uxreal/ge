@@ -4,7 +4,10 @@ import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -12,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -38,6 +42,7 @@ import dev.lumen.launcher.ui.glass.rememberBackdropState
 import dev.lumen.launcher.ui.home.FolderOverlay
 import dev.lumen.launcher.ui.home.HomeScreen
 import dev.lumen.launcher.ui.home.ItemContextMenu
+import dev.lumen.launcher.ui.onboarding.SetupBanner
 import dev.lumen.launcher.ui.settings.SettingsScreen
 import dev.lumen.launcher.ui.theme.LocalMotion
 import dev.lumen.launcher.ui.theme.LumenTheme
@@ -181,6 +186,15 @@ fun LauncherRoot(
                         )
 
                         LauncherOverlay.None, LauncherOverlay.Drawer -> Unit
+                    }
+
+                    // Only shows while another launcher still owns the HOME intent.
+                    if (controller.overlay == LauncherOverlay.None && !controller.editMode) {
+                        SetupBanner(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .windowInsetsPadding(WindowInsets.statusBars),
+                        )
                     }
 
                     // Above everything, including overlays: the item under the finger.
