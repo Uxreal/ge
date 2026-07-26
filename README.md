@@ -95,6 +95,13 @@ analytics figure comes from deterministic fixtures in `src/lib/mock/`, not a liv
 platform API. Swapping in real integrations means replacing the fixture imports in each page with real data
 fetching — the component layer and design system don't need to change.
 
+## Also in this repository
+
+[`hermes-android/`](hermes-android/) — a separate, unrelated project: a native Android
+(Kotlin + Compose) voice client for a self-hosted Hermes agent. Push-to-talk, hands-free, and
+wake-word modes with on-device speech, over a configurable HTTP/SSE or WebSocket transport.
+See its own [README](hermes-android/README.md).
+
 ## Extending this
 
 To wire up a real backend/AI provider for a given stage, the fixture module for that page

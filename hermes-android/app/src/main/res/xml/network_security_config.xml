@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hermes commonly runs on a LAN box or a local tunnel over plain http://.
+  Cleartext is therefore permitted; HTTPS is still used whenever the configured
+  base URL is https://. If you only ever reach Hermes over TLS, delete this file
+  and the android:networkSecurityConfig attribute in the manifest.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
