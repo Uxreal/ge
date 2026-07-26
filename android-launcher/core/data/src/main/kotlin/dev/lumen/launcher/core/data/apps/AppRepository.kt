@@ -58,12 +58,16 @@ internal object LauncherProfiles {
     }
 
     fun handleFor(context: Context, serial: Long): UserHandle? {
-        val manager = context.getSystemService(UserManager::class.java) ?: return null
+        val manager = context.getSystemService(UserManager::class.java)
+            ?: return if (serial == 0L) Process.myUserHandle() else null
         runCatching { manager.getUserForSerialNumber(serial) }.getOrNull()?.let { return it }
         // Some OEM builds refuse the lookup for paused profiles; walk the list instead.
-        return runCatching {
+        runCatching {
             manager.userProfiles.firstOrNull { serialFor(context, it) == serial }
-        }.getOrNull()
+        }.getOrNull()?.let { return it }
+        // The personal profile must always resolve, whatever the OEM does to serial lookups —
+        // otherwise every icon load and launch for it silently no-ops.
+        return if (serial == 0L) Process.myUserHandle() else null
     }
 
     /** The personal profile is serial 0 on every shipping device; only exotic builds need the fallback. */

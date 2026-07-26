@@ -2,6 +2,7 @@ package dev.lumen.launcher
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import dev.lumen.launcher.core.data.system.CrashLog
 import dev.lumen.launcher.core.data.wallpaper.WallpaperCoordinator
 import dev.lumen.launcher.core.data.workspace.WorkspaceRepository
 import javax.inject.Inject
@@ -21,6 +22,8 @@ class LumenApplication : Application() {
     lateinit var wallpaper: WallpaperCoordinator
 
     override fun onCreate() {
+        // Before anything else can fail: a crash with no trace is undebuggable in the field.
+        CrashLog.install(this)
         super.onCreate()
         workspace.preload()
         wallpaper.refresh()

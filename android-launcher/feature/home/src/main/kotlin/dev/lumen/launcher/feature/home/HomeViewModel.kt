@@ -20,7 +20,6 @@ import dev.lumen.launcher.core.data.workspace.WorkspaceRepository
 import dev.lumen.launcher.feature.home.layout.LayoutEngine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -53,13 +52,24 @@ class HomeViewModel @Inject constructor(
         get() = prefs.value.homeModel ?: HomeModel.PACKED
 
     init {
-        // First run: once the model is chosen and the app list is real, seed the workspace.
+        // First run: once the model is chosen and the app list is real, seed the workspace. Keyed
+        // to the apps list itself, not a loading flag — a flag can wedge, a non-empty list cannot.
+        // Also self-heals: a PACKED workspace that somehow persisted empty re-fills from installed
+        // apps instead of greeting the user with bare wallpaper.
         viewModelScope.launch {
-            combine(prefsRepo.prefs, appRepo.loading, workspace.ready) { p, loading, ready ->
-                Triple(p, loading, ready)
-            }.collect { (p, loading, ready) ->
-                if (p.homeModel != null && !loading && ready && !workspace.state.value.seeded) {
-                    seed(p.homeModel!!)
+            combine(prefsRepo.prefs, appRepo.apps, workspace.ready) { p, apps, ready ->
+                Triple(p, apps, ready)
+            }.collect { (p, installedApps, ready) ->
+                val model = p.homeModel ?: return@collect
+                if (installedApps.isEmpty() || !ready) return@collect
+                val current = workspace.state.value
+                when {
+                    !current.seeded -> seed(model)
+                    model == HomeModel.PACKED && current.allApps().isEmpty() ->
+                        workspace.mutate {
+                            LayoutEngine.ensureAllApps(it, installedApps, columns, rows)
+                        }
+                    else -> Unit
                 }
             }
         }
@@ -78,8 +88,8 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private suspend fun seed(model: HomeModel) {
-        val installed = appRepo.apps.first { it.isNotEmpty() }
+    private fun seed(model: HomeModel) {
+        val installed = appRepo.apps.value
         workspace.replace(
             when (model) {
                 HomeModel.PACKED -> LayoutEngine.seedPacked(installed, columns, rows)

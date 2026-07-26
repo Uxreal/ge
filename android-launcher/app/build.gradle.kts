@@ -9,8 +9,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.lumen.launcher"
-        versionCode = 1
-        versionName = "0.1.0-phase1"
+        versionCode = 2
+        versionName = "0.1.1-phase1"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -20,8 +20,11 @@ android {
             buildConfigField("boolean", "STRICT_MAIN_THREAD", "true")
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Minification stays off until R8 output is verified on a device: the first field
+            // install of the minified 0.1.0 produced a dead screen, and an unshrunk launcher
+            // that works beats a small one that does not (STATUS.md tracks re-enabling).
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Sideload distribution (DECISIONS D2): debug-signed until a release keystore exists.
             signingConfig = signingConfigs.getByName("debug")

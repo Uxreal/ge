@@ -3,7 +3,7 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: Phase 1 feature-complete in code; compiles and unit tests green; device verification pending.
+Last updated: 0.1.1 — verified on an Android 15 emulator: onboarding renders, PACKED seeds a bottom-anchored grid with icons, taps launch apps. The 0.1.0 black-screen field report was reproduced and root-caused (R8/Kotlin metadata mismatch); minification is off until its output is re-verified.
 
 ---
 
@@ -77,14 +77,19 @@ including the widget bind/configure Activity flows and the §5 home-press ladder
 * **Baseline Profiles are not wired yet.** The `:benchmark` module exists for Macrobenchmark, but the
   `androidx.baselineprofile` producer/consumer wiring needs a device to generate against, so it is
   deferred rather than configured to fail.
-* **Nothing has run on a device yet.** It compiles, unit tests pass, and APKs assemble — but drag
-  feel, widget hosting against real providers, wallpaper reads on Samsung, and every §11 number
-  require hardware. Treat the first install as a test drive, not a verified release.
+* **Emulator-verified, not yet hardware-verified.** An Android 15 emulator confirms boot,
+  onboarding, seeding, icon rendering and app launches. Drag feel, haptics, widget hosting against
+  real providers, Samsung's wallpaper restrictions, and every §11 number still need a physical
+  device.
+* **Crash visibility now exists**: an uncaught-exception handler writes the trace to a file, and
+  the next launch shows a "Lumen crashed last time" card with a Share action — field reports can
+  carry stack traces from here on.
 * **Phase 1 partials, stated plainly:** no uninstall tombstones, no 20-step undo stack, no
   multi-select drag, no pinch-in wiggle entry, shortcuts (`ShortcutItem`) render defensively but
   nothing creates them yet, FREEFORM hover-to-swap resolves on drop rather than live-swapping at
   200ms, and the second home-press does not yet open search (search is Phase 3).
-* **Release build is R8-minified but untested under minification on a device**; if anything breaks,
-  install the debug APK, which is behaviourally identical.
+* **Minification is disabled.** The 0.1.0 minified build painted a black screen (AGP 8.9.2's R8
+  against Kotlin 2.2 metadata); AGP is now 8.13 and the shipped build is unminified. Re-enable only
+  with an emulator/device pass over the minified output.
 * The pre-spec scaffold contained two §1.1 anti-defaults (page overshoot, blur everywhere). Both are
   removed as part of the restructure — see D10.

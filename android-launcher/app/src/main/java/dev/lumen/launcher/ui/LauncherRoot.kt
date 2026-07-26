@@ -1,11 +1,20 @@
 package dev.lumen.launcher.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -21,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lumen.launcher.BuildConfig
 import dev.lumen.launcher.MainActivity
 import dev.lumen.launcher.core.data.model.HomeModel
+import dev.lumen.launcher.core.data.system.CrashLog
 import dev.lumen.launcher.core.data.system.DefaultHome
 import dev.lumen.launcher.core.design.interaction.HapticIntensity
 import dev.lumen.launcher.core.design.motion.MotionTokens
@@ -29,6 +39,7 @@ import dev.lumen.launcher.core.design.surface.backdropSource
 import dev.lumen.launcher.core.design.surface.rememberBackdropCapture
 import dev.lumen.launcher.core.design.theme.LumenTheme
 import dev.lumen.launcher.core.design.theme.LumenThemeConfig
+import dev.lumen.launcher.core.design.theme.LocalTypography
 import dev.lumen.launcher.core.design.theme.LumenTypography
 import dev.lumen.launcher.core.design.theme.ThemeMode
 import dev.lumen.launcher.feature.drawer.DrawerScreen
@@ -207,6 +218,21 @@ fun LauncherRoot(
                         },
                     )
                 }
+
+                // If the previous run died, say so and hand over the trace. Field debugging
+                // depends on this card existing — "it does not load" carries no stack trace.
+                var crashText by remember { mutableStateOf(CrashLog.read(activity)) }
+                crashText?.let { trace ->
+                    CrashCard(
+                        trace = trace,
+                        onShare = { CrashLog.share(activity) },
+                        onDismiss = {
+                            CrashLog.clear(activity)
+                            crashText = null
+                        },
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                    )
+                }
             }
         }
     }
@@ -231,4 +257,41 @@ private fun DrawerEdge(onOpen: () -> Unit, modifier: Modifier = Modifier) {
                 }
             },
     )
+}
+
+/** The last run crashed: one card, the first stack frame, share and dismiss. */
+@Composable
+private fun CrashCard(
+    trace: String,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    val headline = trace.lineSequence()
+        .firstOrNull { it.contains("Exception") || it.contains("Error") }
+        ?.trim()?.take(140) ?: "Previous session crashed"
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .background(colors.errorContainer, MaterialTheme.shapes.large)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        BasicText(
+            text = "Lumen crashed last time",
+            style = typography.capsuleTitle.copy(color = colors.onErrorContainer),
+        )
+        BasicText(
+            text = headline,
+            style = typography.tileLabel.copy(color = colors.onErrorContainer),
+        )
+        Row {
+            TextButton(onClick = onShare) { Text("Share log") }
+            TextButton(onClick = onDismiss) { Text("Dismiss") }
+        }
+    }
 }

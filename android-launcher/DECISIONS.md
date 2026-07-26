@@ -203,3 +203,20 @@ as a gap, revisit with §6's Library view.
 **Why:** §2 forbids cross-feature imports, and a new module for fifteen lines is structure without
 substance. The moment a third consumer appears (search, Phase 3), the helper graduates into a real
 shared module and both copies die.
+
+## D17 — 0.1.0 black screen: root cause and the response
+
+**What happened:** the first field install ("it does not load… nothing after") was reproduced on an
+Android 15 emulator: the 0.1.0 APK ran, held window focus, and painted nothing — no crash, no
+trace. The same code built without minification renders and works end to end (onboarding → model
+choice → seeded bottom-anchored grid → app launch, all screenshot-verified).
+
+**Root cause:** AGP 8.9.2 bundles an R8 older than Kotlin 2.2, which parsed our 2.2.20 metadata
+with errors (it warned at build time) and silently produced broken output.
+
+**Chosen:** upgrade AGP to 8.13.0; ship the release build unminified until the minified output is
+itself verified end-to-end; install an uncaught-exception handler whose trace surfaces in-app with
+a share action on the next launch, so no future field report is ever trace-less.
+
+**Rejected:** keeping minification on the new R8 without re-verification (burned once), and
+treating the report as un-reproducible without device logs (the emulator reproduced it exactly).

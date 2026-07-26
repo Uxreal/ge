@@ -127,7 +127,8 @@ class IconCache @Inject constructor(
 
     private fun renderIcon(key: AppKey, sizePx: Int): Bitmap? = runCatching {
         val apps = launcherApps ?: return null
-        val user = LauncherProfiles.handleFor(context, key.profile) ?: return null
+        val user = LauncherProfiles.handleFor(context, key.profile)
+            ?: android.os.Process.myUserHandle()
         val activity = apps.getActivityList(key.packageName, user)
             .firstOrNull { it.componentName.className == key.activityName }
             ?: apps.getActivityList(key.packageName, user).firstOrNull()
