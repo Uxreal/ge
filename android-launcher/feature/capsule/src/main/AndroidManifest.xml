@@ -16,5 +16,20 @@
                 <action android:name="dev.lumen.launcher.capsule.CLEAR" />
             </intent-filter>
         </receiver>
+
+        <!--
+            §4's media source needs a notification listener as its consent token: the system only
+            reveals MediaSessions to a listener the user enabled by hand. The service reads no
+            notifications; disabled it costs nothing and the launcher works fully without it (§10).
+        -->
+        <service
+            android:name=".sources.CapsuleNotificationListener"
+            android:exported="true"
+            android:label="@string/capsule_media_access"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

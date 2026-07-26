@@ -49,12 +49,19 @@ sealed interface CapsuleGlyph {
     data class Image(val uri: String) : CapsuleGlyph
 }
 
-enum class BuiltinSymbol { CLOCK, BATTERY, CHARGING, ALARM, SPARK }
+enum class BuiltinSymbol { CLOCK, BATTERY, CHARGING, ALARM, SPARK, NOTE, PLAY, PAUSE, NEXT }
 
 @Immutable
 data class CapsuleAction(
     val label: String,
     val intent: PendingIntent?,
+    /**
+     * Built-in sources act directly (a media transport control has no `PendingIntent`); pushed
+     * cards act through [intent]. When both exist, [run] wins.
+     */
+    val run: (() -> Unit)? = null,
+    /** When set, the chip renders this glyph instead of the label; the label becomes a11y text. */
+    val symbol: BuiltinSymbol? = null,
 )
 
 /**

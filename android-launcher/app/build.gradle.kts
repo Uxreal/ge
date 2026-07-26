@@ -9,8 +9,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.lumen.launcher"
-        versionCode = 5
-        versionName = "0.3.1-capsule"
+        versionCode = 6
+        versionName = "0.4.0-media"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -20,11 +20,12 @@ android {
             buildConfigField("boolean", "STRICT_MAIN_THREAD", "true")
         }
         release {
-            // Minification stays off until R8 output is verified on a device: the first field
-            // install of the minified 0.1.0 produced a dead screen, and an unshrunk launcher
-            // that works beats a small one that does not (STATUS.md tracks re-enabling).
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // Back on after the 0.1.0 incident (AGP 8.9.2's R8 vs Kotlin 2.2 metadata — dead
+            // screen). The gate STATUS.md set was "watch the minified output work on a screen":
+            // met on an Android 15 emulator with AGP 8.13 — boot to home, Capsule pill, drawer,
+            // app launch, capsule push all verified on this exact configuration (D29).
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Sideload distribution (DECISIONS D2): debug-signed until a release keystore exists.
             signingConfig = signingConfigs.getByName("debug")

@@ -361,3 +361,32 @@ worked: since Android 8 a manifest receiver does not receive implicit broadcasts
 runtime receiver; the manifest receiver still catches explicitly-addressed pushes if the process
 is dead. §4.1's defences (validation, clamp, rate limit, block list) are unchanged — both paths
 funnel through one parser.
+
+## D28 — Media in the Capsule rides a notification listener the user enables by hand
+
+**Chosen:** §4's media source (priority 700) reads `MediaSessionManager` through a
+`NotificationListenerService` that exists only to be the consent token — it reads no
+notifications. Nothing appears until the user turns the listener on from Settings → Capsule,
+which deep-links to the system screen; the launcher re-checks on every resume and when the
+listener connects. Transport controls (play/pause/next) act on the `MediaController` directly,
+so `CapsuleAction` gained a `run` lambda beside the `PendingIntent` a push supplies. The media
+card is not dismissible: the next playback callback would re-push it instantly, and a dismissal
+that comes straight back reads as broken.
+
+**Rejected:** shipping without media (it is the single most-used real-world card), and asking for
+notification access during onboarding (§10: absence of a permission is a normal state, not a
+nag — the launcher is fully functional without it).
+
+## D29 — Minification is back on, with the evidence STATUS demanded
+
+**Chosen:** `isMinifyEnabled = true` + resource shrinking for release. 46 MB → 2.9 MB.
+
+**The gate was** "watch the minified output work on a screen", set after 0.1.0's R8/Kotlin-2.2
+dead screen. Met on an Android 15 emulator with AGP 8.13's R8, on the exact artifact shipped:
+cold install → onboarding → PACKED chosen → grid seeded with real icons bottom-anchored → Capsule
+clock pill → an `am broadcast` push rendering rim progress → an app launched from the grid. Those
+paths cover every reflective surface that R8 could plausibly break (Room, protobuf lite, Hilt,
+`LauncherApps`, the broadcast parser).
+
+**Rejected:** re-enabling on the argument that AGP 8.13 "probably fixed it". That reasoning was
+free once and cost a release.

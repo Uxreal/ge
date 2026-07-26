@@ -100,6 +100,8 @@ fun LauncherRoot(
         var isDefaultHome by remember { mutableStateOf(DefaultHome.isDefault(activity)) }
         androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
             isDefaultHome = DefaultHome.isDefault(activity)
+            // The user may be returning from the notification-access screen with consent granted.
+            capsuleVm.refreshMedia()
         }
         val requestDefaultHome: () -> Unit = {
             val intent = DefaultHome.requestRoleIntent(activity)

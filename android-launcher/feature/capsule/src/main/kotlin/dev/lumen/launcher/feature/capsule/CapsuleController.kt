@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.lumen.launcher.core.data.prefs.PrefsRepository
 import dev.lumen.launcher.feature.capsule.push.CapsulePushParser
+import dev.lumen.launcher.feature.capsule.sources.MediaSource
 import dev.lumen.launcher.feature.capsule.sources.SystemSources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -44,6 +45,7 @@ class CapsuleController @Inject constructor(
     val deck: StateFlow<CapsuleDeck> = _deck.asStateFlow()
 
     private val sources = SystemSources(context, this)
+    private val media = MediaSource(context, this)
     private var started = false
 
     /**
@@ -65,6 +67,7 @@ class CapsuleController @Inject constructor(
         started = true
         scope.launch { runLoop() }
         sources.start(scope)
+        media.refresh()
         ContextCompat.registerReceiver(
             context,
             pushReceiver,
@@ -104,6 +107,9 @@ class CapsuleController @Inject constructor(
         if (!card.dismissible) return
         clear(card.id)
     }
+
+    /** Re-checks media-session access; called on resume and when the listener connects. */
+    fun refreshMedia() = media.refresh()
 
     fun blockPackage(pkg: String) {
         prefs.blockCapsulePackage(pkg)

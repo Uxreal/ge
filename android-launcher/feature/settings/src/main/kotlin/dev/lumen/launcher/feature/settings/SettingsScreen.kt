@@ -46,6 +46,15 @@ import dev.lumen.launcher.core.design.motion.LocalMotion
 import dev.lumen.launcher.core.design.theme.LocalTypography
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 
 /**
  * The settings skeleton (§13 Phase 1): Compose, not a `PreferenceScreen` (§1.1), with §7's large
@@ -239,6 +248,32 @@ fun SettingsScreen(
                         prefs.capsuleEnabled,
                     ) { vm.setCapsuleEnabled(it) }
                 }
+                item {
+                    // §10: media needs notification access as its consent token, granted in system
+                    // settings and revocable there. The row states the current answer plainly.
+                    val context = LocalContext.current
+                    var mediaGranted by remember {
+                        mutableStateOf(hasNotificationAccess(context))
+                    }
+                    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                        mediaGranted = hasNotificationAccess(context)
+                    }
+                    ActionRow(
+                        title = "Media playback in the Capsule",
+                        summary = if (mediaGranted) {
+                            "On. Now playing appears as a card with play, pause and next."
+                        } else {
+                            "Off. Requires notification access, which Android grants in system " +
+                                "settings. Lumen reads no notifications, only media sessions."
+                        },
+                    ) {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
+                            )
+                        }
+                    }
+                }
                 // §4.1: any app can push a card without a permission, so the defence is a list the
                 // user can actually see. Packages appear here the first time they push.
                 if (prefs.capsuleSeenPackages.isEmpty()) {
@@ -276,6 +311,9 @@ fun SettingsScreen(
         }
     }
 }
+
+private fun hasNotificationAccess(context: Context): Boolean =
+    context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
 
 @Composable
 private fun SectionTitle(title: String) {

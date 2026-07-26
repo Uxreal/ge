@@ -63,6 +63,7 @@ import dev.lumen.launcher.core.design.motion.LocalMotion
 import dev.lumen.launcher.core.design.shape.Superellipse
 import dev.lumen.launcher.core.design.theme.LocalTypography
 import dev.lumen.launcher.feature.capsule.BuiltinSymbol
+import dev.lumen.launcher.feature.capsule.CapsuleAction
 import dev.lumen.launcher.feature.capsule.CapsuleCard
 import dev.lumen.launcher.feature.capsule.CapsuleDeck
 import dev.lumen.launcher.feature.capsule.CapsuleGlyph
@@ -368,9 +369,11 @@ private fun CapsulePill(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         card.actions.take(3).forEach { action ->
                             ActionChip(
-                                label = action.label,
+                                action = action,
                                 accent = accent,
-                                onClick = { action.intent?.let(onLaunch) },
+                                onClick = {
+                                    action.run?.invoke() ?: action.intent?.let(onLaunch)
+                                },
                             )
                         }
                     }
@@ -441,15 +444,28 @@ private fun androidx.compose.foundation.layout.BoxScope.Shoulder(depth: Int) {
 }
 
 @Composable
-private fun ActionChip(label: String, accent: Color, onClick: () -> Unit) {
+private fun ActionChip(action: CapsuleAction, accent: Color, onClick: () -> Unit) {
     val typography = LocalTypography.current
     Box(
         modifier = Modifier
             .background(accent.copy(alpha = 0.16f), MaterialTheme.shapes.small)
-            .pointerInput(label) { detectTapGestures { onClick() } }
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .pointerInput(action.label) { detectTapGestures { onClick() } }
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .semantics { contentDescription = action.label },
+        contentAlignment = Alignment.Center,
     ) {
-        BasicText(text = label, style = typography.tileLabel.copy(color = accent))
+        val symbol = action.symbol
+        if (symbol != null) {
+            Box(
+                modifier = Modifier
+                    .size(CHIP_GLYPH)
+                    .drawWithCache {
+                        onDrawBehind { drawBuiltinSymbol(symbol, accent, size.minDimension) }
+                    },
+            )
+        } else {
+            BasicText(text = action.label, style = typography.tileLabel.copy(color = accent))
+        }
     }
 }
 
@@ -567,5 +583,6 @@ private val FALLBACK_HEIGHT = 32.dp
 private val FALLBACK_GAP = 10.dp
 private val EXPANDED_CORNER = 24.dp
 private val GLYPH_SIZE = 14.dp
+private val CHIP_GLYPH = 16.dp
 private val SHUFFLE_THRESHOLD = 40.dp
 private val DISMISS_THRESHOLD = 42.dp

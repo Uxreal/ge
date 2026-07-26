@@ -80,6 +80,66 @@ internal fun DrawScope.drawBuiltinSymbol(symbol: BuiltinSymbol, color: Color, bo
             }
         }
 
+        BuiltinSymbol.NOTE -> {
+            // An eighth note: stem, flag, and a head sitting low-left.
+            val headR = boxSize * 0.16f
+            val headC = Offset(center.x - boxSize * 0.14f, boxSize * 0.72f)
+            val stemTop = boxSize * 0.14f
+            drawCircle(color, headR, headC)
+            drawLine(
+                color,
+                Offset(headC.x + headR * 0.9f, headC.y),
+                Offset(headC.x + headR * 0.9f, stemTop),
+                stroke,
+                StrokeCap.Round,
+            )
+            val flag = Path().apply {
+                moveTo(headC.x + headR * 0.9f, stemTop)
+                quadraticTo(
+                    center.x + boxSize * 0.30f, stemTop + boxSize * 0.10f,
+                    center.x + boxSize * 0.22f, stemTop + boxSize * 0.34f,
+                )
+            }
+            drawPath(flag, color, style = Stroke(stroke, cap = StrokeCap.Round))
+        }
+
+        BuiltinSymbol.PLAY -> {
+            val s = boxSize * 0.34f
+            val triangle = Path().apply {
+                moveTo(center.x - s * 0.7f, center.y - s)
+                lineTo(center.x + s, center.y)
+                lineTo(center.x - s * 0.7f, center.y + s)
+                close()
+            }
+            drawPath(triangle, color)
+        }
+
+        BuiltinSymbol.PAUSE -> {
+            val barW = boxSize * 0.16f
+            val barH = boxSize * 0.56f
+            listOf(-1f, 1f).forEach { side ->
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(center.x + side * boxSize * 0.16f - barW / 2f, center.y - barH / 2f),
+                    size = Size(barW, barH),
+                    cornerRadius = CornerRadius(barW / 2f),
+                )
+            }
+        }
+
+        BuiltinSymbol.NEXT -> {
+            val s = boxSize * 0.26f
+            listOf(-0.22f, 0.24f).forEach { shift ->
+                val triangle = Path().apply {
+                    moveTo(center.x + boxSize * shift - s * 0.6f, center.y - s)
+                    lineTo(center.x + boxSize * shift + s * 0.8f, center.y)
+                    lineTo(center.x + boxSize * shift - s * 0.6f, center.y + s)
+                    close()
+                }
+                drawPath(triangle, color)
+            }
+        }
+
         BuiltinSymbol.SPARK -> {
             // A four-point star with concave sides — the mark for "something pushed this".
             val outer = r * 0.92f

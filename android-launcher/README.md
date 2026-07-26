@@ -35,11 +35,15 @@ Three things make it look like Lumen's rather than like everyone else's take on 
 Interactions: tap expands, long-press expands with actions, swipe left/right shuffles the deck,
 flick up dismisses a dismissible card, drag down expands. Every transition fires the `state` haptic.
 
-**Built-in sources need no permissions and make no network calls:** the ambient clock and date, the
-battery (a card on plug/unplug, a persistent one below 15%), and the next alarm from
-`AlarmManager.getNextAlarmClock()` — priority 850 inside the final minute, 400 before that. Media
-playback is deliberately absent: `MediaSessionManager` needs notification-listener consent, which is
-a decision for you to make rather than a default to ship.
+**Built-in sources need no permissions and make no network calls:** the ambient clock and date,
+the battery (a card on plug/unplug, a persistent one below 15%), and the next alarm from
+`AlarmManager.getNextAlarmClock()`, at priority 850 inside the final minute and 400 before that.
+
+**Media playback is opt-in.** Whatever is playing becomes a card with play/pause/next chips that
+act on the `MediaSession` directly, and tapping it opens the player. Android only exposes media
+sessions to an enabled notification listener, so this lives behind **Settings → Capsule → Media
+playback**, which deep-links to the system consent screen. The listener Lumen registers reads no
+notifications; it exists solely to be that consent token, and everything works without it.
 
 ### Pushing your own cards
 

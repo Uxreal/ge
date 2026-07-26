@@ -3,13 +3,12 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.3.1 — the Capsule redesigned on the first hardware report ("should be replacing
-the camera... horrible and feels slow"): it now docks on the punch-hole cutout, is camera-black
-opaque instead of frosted, expands as one coordinated move, and the push API actually receives
-implicit broadcasts (D25–D27). Screenshot-verified on an Android 15 emulator: glance pill, rim
-progress on a pushed card, expansion, and correct rejection of a wide notch. Phase 2 was started
-before Phase 1's two measured criteria were met; that user-directed deviation from §0's phase
-order is recorded as D18.
+Last updated: 0.4.0 — media playback in the Capsule (§4's 700-priority source, behind
+notification-listener consent per §10, with play/pause/next chips — D28), and **minification is
+back on**: the R8-minified 2.9 MB build was walked through cold install → onboarding → PACKED
+seeding → Capsule → push → app launch on the emulator, which is the gate this file set (D29).
+Phase 2 was started before Phase 1's two measured criteria were met; that user-directed deviation
+from §0's phase order is recorded as D18.
 
 ---
 
@@ -50,7 +49,7 @@ order is recorded as D18.
 | Peel: drag down past 96dp into a floating home card | **Absent by choice (D22).** Drag down expands instead. The peeled home card is a Phase 3 item in §13 |
 | Persist deck across process death | **Absent by choice (D20)** — `PendingIntent`s cannot be serialised, so a restored card would look alive and do nothing |
 | Public intent API with validation, 4/sec/package rate limit, block-list screen | **Done, tested, and exercised on the emulator** — a real `am broadcast` push reached the pill and drew its progress on the rim. Served by a context-registered receiver because manifest receivers stopped seeing implicit broadcasts in Android 8 (D27) |
-| Sources: call, navigation, capture, media, transfer | **Absent.** All five need either notification-listener consent (§10) or a permission. Only the three permission-free sources ship: clock, battery, next alarm |
+| Sources: call, navigation, capture, media, transfer | **Media ships (D28)** — session title/artist, play/pause/next acting on the `MediaController`, one card per package via the §4 dedupe, consent-gated from Settings → Capsule. Untestable on this emulator (no active `MediaSession` available); logic is framework-bound, so its first real exercise is on hardware. Call, navigation, capture and transfer remain absent — each needs a permission or listener scope beyond media |
 | Cards reorder with animation, never popping in or out | **Partial.** Entry and exit cross-fade and the container morphs, but reordering inside the deck is not yet a per-card animated transition |
 
 ## What exists right now
@@ -118,8 +117,9 @@ floor, and RoleManager default-home plumbing.
   multi-select drag, no pinch-in wiggle entry, shortcuts (`ShortcutItem`) render defensively but
   nothing creates them yet, FREEFORM hover-to-swap resolves on drop rather than live-swapping at
   200ms, and the second home-press does not yet open search (search is Phase 3).
-* **Minification is disabled.** The 0.1.0 minified build painted a black screen (AGP 8.9.2's R8
-  against Kotlin 2.2 metadata); AGP is now 8.13 and the shipped build is unminified. Re-enable only
-  with an emulator/device pass over the minified output.
+* **Minification is ON as of 0.4.0** (D29). The gate — watch the minified output work on a
+  screen — was met on the emulator across every reflective surface R8 could break: onboarding,
+  PACKED seeding through Room and protobuf, icon loading, the Capsule, the broadcast parser, an
+  app launch. The APK is 2.9 MB.
 * The pre-spec scaffold contained two §1.1 anti-defaults (page overshoot, blur everywhere). Both are
   removed — see D10.

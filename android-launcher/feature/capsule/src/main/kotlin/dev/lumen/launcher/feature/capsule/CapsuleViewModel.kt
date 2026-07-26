@@ -19,4 +19,6 @@ class CapsuleViewModel @Inject constructor(
     fun pinFront(dedupeKey: String) = controller.pinFront(dedupeKey)
 
     fun dismiss(card: CapsuleCard) = controller.dismiss(card)
+
+    fun refreshMedia() = controller.refreshMedia()
 }

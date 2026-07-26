@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown in the system's notification-access screen; say plainly what it is for. -->
+    <string name="capsule_media_access">Lumen Capsule (media playback)</string>
+</resources>
