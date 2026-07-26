@@ -112,13 +112,25 @@ appears in **Settings → Capsule**, where you can switch it off.
 
 ## Install on a phone (sideload)
 
-Grab `releases/lumen-<version>.apk` from this repo (or build it: see below), then on the phone:
+Grab `releases/lumen-0.3.0-capsule.apk` from this repo (or build it: see below), then on the
+phone:
 
 1. Copy the APK over (USB, Quick Share, cloud link — anything).
 2. Open it from **My Files** / **Files**. Android will ask to allow installs from that app —
    allow it (Settings → *Install unknown apps*), then install.
 3. Launch **Lumen**, pick a home model, and accept the **default home** prompt.
    If you skip it: Settings → Apps → **Choose default apps** → **Home app** → Lumen.
+4. Press Home. The Capsule is the pill under the status bar showing the time — tap it to expand,
+   long-press for actions. To see the deck and the rim progress, push a card at it:
+
+   ```bash
+   adb shell am broadcast -a dev.lumen.launcher.capsule.PUSH \
+     --es id demo --es pkg com.demo --es collapsedText "62%" \
+     --es title "Sync" --es subtitle "Two of three folders" --ef progress 0.62
+   ```
+
+The APK is ~46 MB because minification is off — see `releases/README.md` for why that is a
+deliberate choice rather than an oversight.
 
 ### Galaxy Z Flip / Fold notes
 
