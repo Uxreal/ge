@@ -9,6 +9,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import dev.lumen.launcher.feature.capsule.BuiltinSymbol
 import dev.lumen.launcher.feature.capsule.CapsuleAction
 import dev.lumen.launcher.feature.capsule.CapsuleCard
 import dev.lumen.launcher.feature.capsule.CapsuleController
@@ -16,46 +17,59 @@ import dev.lumen.launcher.feature.capsule.CapsuleGlyph
 import dev.lumen.launcher.feature.capsule.SourceKind
 
 /**
- * §4.1's public API. Any app, Tasker task or `adb shell am broadcast` can push a card; `README.md`
- * carries a copy-pasteable example.
- *
- * Everything is validated and malformed pushes are dropped silently (logged at debug), because a
- * launcher that can be crashed by a broadcast is a launcher that can be crashed by any installed
- * app. Three specific defences:
+ * §4.1's wire format: validation, truncation and identity for a pushed card, shared by the two
+ * receivers below. Everything is checked and malformed pushes are dropped silently (logged at
+ * debug), because a launcher that can be crashed by a broadcast can be crashed by any installed
+ * app.
  *
  *  * **Priority is clamped to 0..500** in [CapsuleController], so a third party can never outrank
  *    an incoming call.
  *  * **Identity is proven where possible.** A broadcast carries no trustworthy caller package, but
  *    `PendingIntent.getCreatorPackage()` is filled in by the system and cannot be forged. When a
- *    push supplies a tap intent or an action, that is the package we attribute it to; only when it
- *    supplies neither do we fall back to the self-declared `pkg` extra, and the card is then marked
- *    unverified so the block-list screen can say so.
- *  * **Rate limited** to four pushes per second per package.
+ *    push supplies a tap intent or an action, that is the package the card is attributed to; only
+ *    when it supplies neither do we fall back to the self-declared `pkg` extra, and the card is
+ *    then marked unverified so the block-list screen can say so.
+ *  * **Rate limited** to four pushes per second per package, in the controller.
  */
-class CapsulePushReceiver : BroadcastReceiver() {
+object CapsulePushParser {
 
-    /**
-     * Resolved through an entry point rather than `@AndroidEntryPoint` field injection: Hilt's
-     * receiver support needs a `super.onReceive()` call that Kotlin will not compile, because at
-     * compile time the superclass member is still abstract. Fetching the singleton explicitly is
-     * the same dependency with none of that.
-     */
-    @EntryPoint
-    @InstallIn(SingletonComponent::class)
-    interface ControllerEntryPoint {
-        fun capsuleController(): CapsuleController
-    }
+    // DECISIONS D3 fixes the intent namespace to the application id.
+    const val ACTION_PUSH = "dev.lumen.launcher.capsule.PUSH"
+    const val ACTION_CLEAR = "dev.lumen.launcher.capsule.CLEAR"
 
-    override fun onReceive(context: Context, intent: Intent) {
-        val controller = runCatching {
-            EntryPointAccessors
-                .fromApplication(context.applicationContext, ControllerEntryPoint::class.java)
-                .capsuleController()
-        }.getOrElse {
-            Log.d(TAG, "capsule unavailable", it)
-            return
-        }
+    const val EXTRA_ID = "id"
+    const val EXTRA_PACKAGE = "pkg"
+    const val EXTRA_PRIORITY = "priority"
+    const val EXTRA_COLLAPSED = "collapsedText"
+    const val EXTRA_TITLE = "title"
+    const val EXTRA_SUBTITLE = "subtitle"
+    const val EXTRA_PROGRESS = "progress"
+    const val EXTRA_ICON_URI = "iconUri"
+    const val EXTRA_ACCENT = "accentColor"
+    const val EXTRA_TAP_INTENT = "tapIntent"
+    const val EXTRA_EXPIRES_AT = "expiresAt"
+    const val EXTRA_DISMISSIBLE = "dismissible"
 
+    /** `actionLabel0`..`actionLabel2` with matching `actionIntent0`..`actionIntent2`. */
+    const val EXTRA_ACTION_LABEL = "actionLabel"
+    const val EXTRA_ACTION_INTENT = "actionIntent"
+
+    /** Shown in the block list when a push carried no provable identity. */
+    const val UNATTRIBUTED = "(unattributed)"
+
+    internal const val TAG = "Capsule"
+    private const val DEFAULT_PRIORITY = 250
+    private const val MAX_ACTIONS = 3
+    private const val MAX_ID = 128
+    private const val MAX_PACKAGE = 128
+    private const val MAX_COLLAPSED = 12
+    private const val MAX_TITLE = 80
+    private const val MAX_SUBTITLE = 120
+    private const val MAX_ACTION_LABEL = 20
+    private const val MAX_LIFETIME_MS = 24L * 60 * 60 * 1000
+
+    /** Routes one PUSH/CLEAR intent into [controller]. Both receivers land here. */
+    fun handle(context: Context, intent: Intent, controller: CapsuleController) {
         when (intent.action) {
             ACTION_PUSH -> parse(context, intent)?.let(controller::pushExternal)
                 ?: Log.d(TAG, "dropped malformed push")
@@ -66,7 +80,7 @@ class CapsulePushReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun parse(context: Context, intent: Intent): CapsuleCard? {
+    fun parse(context: Context, intent: Intent): CapsuleCard? {
         val id = intent.getStringExtra(EXTRA_ID)?.trim()?.take(MAX_ID) ?: return null
         if (id.isEmpty()) return null
 
@@ -112,7 +126,7 @@ class CapsulePushReceiver : BroadcastReceiver() {
             glyph = intent.getStringExtra(EXTRA_ICON_URI)
                 ?.takeIf { it.startsWith("content://") || it.startsWith("android.resource://") }
                 ?.let(CapsuleGlyph::Image)
-                ?: CapsuleGlyph.Builtin(dev.lumen.launcher.feature.capsule.BuiltinSymbol.SPARK),
+                ?: CapsuleGlyph.Builtin(BuiltinSymbol.SPARK),
             accentArgb = intent.getIntExtra(EXTRA_ACCENT, 0),
             actions = actions,
             tapIntent = tapIntent,
@@ -136,41 +150,39 @@ class CapsulePushReceiver : BroadcastReceiver() {
             @Suppress("DEPRECATION")
             getParcelableExtra(key) as? PendingIntent
         }.getOrNull()
+}
 
-    companion object {
-        // DECISIONS D3 fixes the intent namespace to the application id.
-        const val ACTION_PUSH = "dev.lumen.launcher.capsule.PUSH"
-        const val ACTION_CLEAR = "dev.lumen.launcher.capsule.CLEAR"
+/**
+ * The manifest half of §4.1. Since Android 8 a manifest receiver only sees broadcasts that name
+ * this component explicitly (`am broadcast -n dev.lumen.launcher/...`); the natural
+ * `am broadcast -a dev.lumen.launcher.capsule.PUSH` form is an implicit broadcast, which the
+ * running process picks up through the context-registered receiver in [CapsuleController]. The
+ * launcher is the HOME app, so "running" is the normal state — this receiver is the fallback that
+ * still catches an explicit push when the process happens to be dead.
+ */
+class CapsulePushReceiver : BroadcastReceiver() {
 
-        const val EXTRA_ID = "id"
-        const val EXTRA_PACKAGE = "pkg"
-        const val EXTRA_PRIORITY = "priority"
-        const val EXTRA_COLLAPSED = "collapsedText"
-        const val EXTRA_TITLE = "title"
-        const val EXTRA_SUBTITLE = "subtitle"
-        const val EXTRA_PROGRESS = "progress"
-        const val EXTRA_ICON_URI = "iconUri"
-        const val EXTRA_ACCENT = "accentColor"
-        const val EXTRA_TAP_INTENT = "tapIntent"
-        const val EXTRA_EXPIRES_AT = "expiresAt"
-        const val EXTRA_DISMISSIBLE = "dismissible"
+    /**
+     * Resolved through an entry point rather than `@AndroidEntryPoint` field injection: Hilt's
+     * receiver support needs a `super.onReceive()` call that Kotlin will not compile, because at
+     * compile time the superclass member is still abstract. Fetching the singleton explicitly is
+     * the same dependency with none of that.
+     */
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface ControllerEntryPoint {
+        fun capsuleController(): CapsuleController
+    }
 
-        /** `actionLabel0`..`actionLabel2` with matching `actionIntent0`..`actionIntent2`. */
-        const val EXTRA_ACTION_LABEL = "actionLabel"
-        const val EXTRA_ACTION_INTENT = "actionIntent"
-
-        /** Shown in the block list when a push carried no provable identity. */
-        const val UNATTRIBUTED = "(unattributed)"
-
-        private const val TAG = "Capsule"
-        private const val DEFAULT_PRIORITY = 250
-        private const val MAX_ACTIONS = 3
-        private const val MAX_ID = 128
-        private const val MAX_PACKAGE = 128
-        private const val MAX_COLLAPSED = 12
-        private const val MAX_TITLE = 80
-        private const val MAX_SUBTITLE = 120
-        private const val MAX_ACTION_LABEL = 20
-        private const val MAX_LIFETIME_MS = 24L * 60 * 60 * 1000
+    override fun onReceive(context: Context, intent: Intent) {
+        val controller = runCatching {
+            EntryPointAccessors
+                .fromApplication(context.applicationContext, ControllerEntryPoint::class.java)
+                .capsuleController()
+        }.getOrElse {
+            Log.d(CapsulePushParser.TAG, "capsule unavailable", it)
+            return
+        }
+        CapsulePushParser.handle(context, intent, controller)
     }
 }

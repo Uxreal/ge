@@ -308,3 +308,56 @@ whole transform is skipped under reduce-motion, which is the setting's actual pr
 full-screen layer and then blitted back — the cost of a blur nobody was drawing. The redraw
 *tickets* are a separate axis and remain: consumers say "someone is sampling us", tickets say "the
 pixels are moving". Both must be true before the frame clock is read.
+
+## D25 — The Capsule docks ON the camera and is opaque, not frosted
+
+**Chosen:** the pill embraces the punch-hole cutout — sized from the hole, positioned so the hole
+sits at its centre, content flanking the camera symmetrically — and is painted near-black opaque.
+The window sets `LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS` to be allowed there.
+
+**Rejected:** the 0.3.0 design (frosted translucent pill floating below the status bar), which the
+first hardware report called what it was.
+
+**Why:** §4 says GLANCE "grows around the cutout", and the only way a pill absorbs a camera is by
+matching it: near-black on near-black, so the hole reads as part of the surface. A frosted lens
+cannot do that — and at 34dp tall, blur + refraction + highlight + hairline read as a washed-out
+blob, not a material. Opacity is also the performance fix: the frosted pill permanently mounted a
+backdrop consumer, so the entire home surface was re-recorded whenever it redrew. The Capsule is
+the one surface that is *always* on screen; it must be the one surface that costs nothing.
+
+The docking policy lives in `CapsuleGeometry`, pure and unit-tested, because the first emulator
+run proved the obvious heuristic wrong: a wide emulated notch passed a centred-only check and was
+"embraced" into a full-width banner. Embrace requires a punch-hole — under a fifth of the screen
+wide, under 44dp tall, centred. Notches, corner holes and cutout-less screens get a plain pill
+under the status bar.
+
+## D26 — Expansion is one coordinated move with a persistent header
+
+**Chosen:** the header row (collapsed text left of the camera, glyph right) is identical in both
+states; expanding widens the container and slides the card out from underneath on the same `morph`
+spring, with a 4% press-squish on `micro` for tap feedback. Expanded width is content-sized
+(≤356dp), not full-width. The deck's dot rail is gone; the shoulder slivers carry depth alone.
+
+**Rejected:** 0.3.0's expansion — `animateContentSize`, a corner animation and an
+`AnimatedContent` cross-fade of the entire contents running as three unsynchronised animations
+into a full-width card.
+
+**Why:** the field report said "feels slow", and the spec's `morph` spring was not the cause — the
+choreography was. Three animations with different curves read as mush; one spring with a fixed
+header reads as a single object changing shape. Less travel is faster at equal stiffness. The page
+transition was tuned on the same report (dim 0.35→0.18, recede 0.10→0.05, parallax 0.20→0.12,
+turn 6°→3.5°): heavy dim mid-swipe read as drag, not depth.
+
+## D27 — The push API is served by a context-registered receiver; the manifest one is a fallback
+
+**Chosen:** `CapsuleController.start()` registers an exported runtime receiver for PUSH/CLEAR;
+the manifest `CapsulePushReceiver` stays for explicit-component broadcasts.
+
+**Rejected:** manifest receiver only — which is what 0.3.0 shipped, and it could never have
+worked: since Android 8 a manifest receiver does not receive implicit broadcasts, and
+`am broadcast -a dev.lumen.launcher.capsule.PUSH` is exactly that. Found live on the emulator.
+
+**Why:** the launcher is the HOME app, so its process is effectively always alive to hold a
+runtime receiver; the manifest receiver still catches explicitly-addressed pushes if the process
+is dead. §4.1's defences (validation, clamp, rate limit, block list) are unchanged — both paths
+funnel through one parser.

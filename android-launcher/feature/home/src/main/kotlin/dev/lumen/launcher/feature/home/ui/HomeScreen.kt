@@ -338,10 +338,12 @@ private fun Modifier.emptySpaceGestures(homeState: HomeState, haptics: Haptics):
 /** Fast enough to read as a flick rather than a scroll that changed its mind. */
 private const val FLICK_SPEED_PX_S = 850f
 
-private const val PAGE_PARALLAX = 0.20f
-private const val PAGE_RECEDE = 0.10f
-private const val PAGE_DIM = 0.35f
-private const val PAGE_TURN_DEG = 6f
+// Tuned down after the first hardware report ("feels slow"): heavy dim and recede read as drag,
+// not depth. The cue only needs to be legible mid-swipe, and mid-swipe is fast.
+private const val PAGE_PARALLAX = 0.12f
+private const val PAGE_RECEDE = 0.05f
+private const val PAGE_DIM = 0.18f
+private const val PAGE_TURN_DEG = 3.5f
 private const val PAGE_CAMERA = 18f
 private const val PAGER_TICKET = "home-pager"
 

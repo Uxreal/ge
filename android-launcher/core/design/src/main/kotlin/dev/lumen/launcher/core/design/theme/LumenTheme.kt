@@ -87,13 +87,9 @@ data class LumenThemeConfig(
  * establish layering over itself.
  */
 fun defaultFrostedTokens(): Map<SurfaceRole, FrostedTokens> = mapOf(
-    SurfaceRole.CAPSULE to FrostedTokens(
-        blurRadius = 32.dp,
-        refraction = 12.dp,
-        band = 16.dp,
-        tint = Color.Black.copy(alpha = 0.34f),
-        specular = 0.45f,
-    ),
+    // The Capsule paints itself camera-black and opaque (D25) — a translucent lens cannot swallow
+    // a punch-hole camera, and opacity is what frees the backdrop recorder on a still home screen.
+    SurfaceRole.CAPSULE to FrostedTokens.Off,
     SurfaceRole.SHEETS to FrostedTokens(
         blurRadius = 40.dp,
         refraction = 14.dp,

@@ -192,23 +192,19 @@ fun LauncherRoot(
 
                 // ---- the Capsule ----------------------------------------------------------
                 // §1: the single pill at the top, and the only handle the OS gets on this screen.
-                // It sits above the backdrop source so it refracts the home surface, and it is
-                // hidden whenever a full-screen lens or onboarding owns the display.
-                // Wiggle mode's chip bar owns the same strip, so the two never share it.
+                // It docks on the camera cutout and positions itself, so no inset padding here —
+                // padding would push it off the hole it exists to swallow. Hidden whenever a
+                // full-screen lens, onboarding, or wiggle mode's chip bar owns the display.
                 if (prefs.capsuleEnabled && prefs.onboardingDone &&
                     overlay == Overlay.NONE && !homeState.editMode
                 ) {
                     val deck by capsuleVm.deck.collectAsStateWithLifecycle()
                     CapsuleHost(
                         deck = deck,
-                        capture = capture,
                         onPin = capsuleVm::pinFront,
                         onDismiss = capsuleVm::dismiss,
                         onLaunch = { intent -> runCatching { intent.send() } },
-                        modifier = Modifier
-                            .align(androidx.compose.ui.Alignment.TopCenter)
-                            .safeDrawingPadding()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
                     )
                 }
 

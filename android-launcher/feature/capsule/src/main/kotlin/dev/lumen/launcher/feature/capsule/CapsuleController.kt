@@ -1,9 +1,14 @@
 package dev.lumen.launcher.feature.capsule
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.util.Log
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.lumen.launcher.core.data.prefs.PrefsRepository
+import dev.lumen.launcher.feature.capsule.push.CapsulePushParser
 import dev.lumen.launcher.feature.capsule.sources.SystemSources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -41,12 +46,34 @@ class CapsuleController @Inject constructor(
     private val sources = SystemSources(context, this)
     private var started = false
 
+    /**
+     * §4.1's live half. A manifest receiver stopped seeing implicit broadcasts in Android 8, so
+     * `am broadcast -a dev.lumen.launcher.capsule.PUSH` only works through a context-registered
+     * receiver — and the launcher, being HOME, is effectively always running to hold one. Exported
+     * on purpose: the API is public by design, and its defences are validation, the clamp, the
+     * rate limit and the block list, not a permission wall.
+     */
+    private val pushReceiver = object : BroadcastReceiver() {
+        override fun onReceive(receiverContext: Context, intent: Intent) {
+            CapsulePushParser.handle(receiverContext, intent, this@CapsuleController)
+        }
+    }
+
     /** Called once from the Application. Idempotent. */
     fun start() {
         if (started) return
         started = true
         scope.launch { runLoop() }
         sources.start(scope)
+        ContextCompat.registerReceiver(
+            context,
+            pushReceiver,
+            IntentFilter().apply {
+                addAction(CapsulePushParser.ACTION_PUSH)
+                addAction(CapsulePushParser.ACTION_CLEAR)
+            },
+            ContextCompat.RECEIVER_EXPORTED,
+        )
     }
 
     // ---- inbound -----------------------------------------------------------------------------

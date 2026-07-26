@@ -152,21 +152,4 @@ internal fun DrawScope.drawRimProgress(
     }
 }
 
-/** The dot rail under a stacked deck: filled for the front card, hollow for the rest. */
-internal fun DrawScope.drawDotRail(count: Int, activeIndex: Int, color: Color, dot: Float, gap: Float) {
-    if (count <= 1) return
-    val total = count * dot + (count - 1) * gap
-    val startX = (size.width - total) / 2f
-    val y = size.height / 2f
-    for (i in 0 until count) {
-        val cx = startX + i * (dot + gap) + dot / 2f
-        val active = i == activeIndex
-        drawCircle(
-            color = color.copy(alpha = if (active) 0.95f else 0.32f),
-            radius = if (active) dot / 2f else dot / 2f * 0.72f,
-            center = Offset(cx, y),
-        )
-    }
-}
-
 private const val COMET_SWEEP = 0.22f

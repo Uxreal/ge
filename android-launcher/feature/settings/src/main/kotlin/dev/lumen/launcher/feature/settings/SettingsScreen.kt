@@ -269,7 +269,7 @@ fun SettingsScreen(
                     }
                 }
                 item {
-                    ActionRow("About", "Lumen $versionName — sideload build. No network access, ever.") { }
+                    ActionRow("About", "Lumen $versionName, sideload build. No network access, ever.") { }
                 }
                 item { Box(Modifier.padding(bottom = 32.dp)) }
             }

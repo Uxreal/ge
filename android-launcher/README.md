@@ -46,18 +46,16 @@ a decision for you to make rather than a default to ship.
 Any app, Tasker task or shell script can push a card. No permission is required.
 
 ```bash
-adb shell am broadcast \
-  -a dev.lumen.launcher.capsule.PUSH \
-  --es id "build.status" \
-  --es pkg "com.my.tool" \
-  --es collapsedText "CI 62%" \
-  --es title "Deploying" \
+# Quote the whole am command: adb strips the outer quotes, and an unquoted extra with a space
+# becomes a positional argument that am reads as the target package. The push then goes nowhere.
+adb shell 'am broadcast -a dev.lumen.launcher.capsule.PUSH \
+  --es id build.status --es pkg com.my.tool \
+  --es collapsedText "CI 62%" --es title Deploying \
   --es subtitle "3 of 5 services live" \
-  --ef progress 0.62 \
-  --ei priority 400
+  --ef progress 0.62 --ei priority 400'
 
 # and to take it away again
-adb shell am broadcast -a dev.lumen.launcher.capsule.CLEAR --es id "build.status"
+adb shell 'am broadcast -a dev.lumen.launcher.capsule.CLEAR --es id build.status'
 ```
 
 | Extra | Type | Notes |

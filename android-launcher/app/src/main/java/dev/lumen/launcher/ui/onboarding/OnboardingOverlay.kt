@@ -109,7 +109,7 @@ fun OnboardingOverlay(
                     Text("Make Lumen my Home app")
                 }
                 TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
-                    Text("Later — I'll do it in Settings")
+                    Text("Later, from Settings")
                 }
             }
         }

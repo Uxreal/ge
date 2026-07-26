@@ -3,10 +3,13 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.3.0 — the Capsule (§4) exists: arbitration, permission-free system sources, the
-public push API, and the pill itself. Phase 2 was started before Phase 1's two measured criteria
-were met; that is a user-directed deviation from §0's phase order and is recorded as D18 rather
-than papered over.
+Last updated: 0.3.1 — the Capsule redesigned on the first hardware report ("should be replacing
+the camera... horrible and feels slow"): it now docks on the punch-hole cutout, is camera-black
+opaque instead of frosted, expands as one coordinated move, and the push API actually receives
+implicit broadcasts (D25–D27). Screenshot-verified on an Android 15 emulator: glance pill, rim
+progress on a pushed card, expansion, and correct rejection of a wide notch. Phase 2 was started
+before Phase 1's two measured criteria were met; that user-directed deviation from §0's phase
+order is recorded as D18.
 
 ---
 
@@ -38,14 +41,15 @@ than papered over.
 
 | Criterion (§4 / §13) | State |
 |---|---|
-| Four states: `DORMANT` / `GLANCE` / `EXPANDED` / `STACKED` | **Done in code.** `DORMANT` is reachable but not the resting state — D19 keeps an ambient clock source alive at priority 100 so the Capsule is a permanent handle |
+| GLANCE "grows around the cutout" | **Done in code, geometry unit-tested.** The pill embraces a centred punch-hole (D25); the policy has 7 tests including the wide-notch and corner-hole rejections. The embrace itself is **not** emulator-verifiable — no emulated cutout is a small centred hole — so its first visual check happens on the Flip |
+| Four states: `DORMANT` / `GLANCE` / `EXPANDED` / `STACKED` | **Done, emulator-verified.** `DORMANT` is reachable but not the resting state — D19 keeps an ambient clock source alive at priority 100 so the Capsule is a permanent handle |
 | Arbitration: 800ms front dwell, 400ms coalesce, dedupe by package + kind, 8s manual hold, priority order, expiry | **Done and tested** — 20 unit tests against a virtual clock, including the flicker case (a source re-pushing itself does not re-arm its own dwell) |
 | Auto-expand once for 2.5s at priority ≥800 | **Done and tested** |
 | Deck shuffle by horizontal swipe, width animates to each card | **Done in code** — `animateContentSize` on the `morph` spring; feel unverified on hardware |
-| Dot rail showing depth | **Done in code** |
+| Dot rail showing depth | **Replaced (D26).** The shoulder slivers behind the front card carry deck depth; a row of decorative dots under the pill was clutter in the cutout composition |
 | Peel: drag down past 96dp into a floating home card | **Absent by choice (D22).** Drag down expands instead. The peeled home card is a Phase 3 item in §13 |
 | Persist deck across process death | **Absent by choice (D20)** — `PendingIntent`s cannot be serialised, so a restored card would look alive and do nothing |
-| Public intent API with validation, 4/sec/package rate limit, block-list screen | **Done and tested** — rate limiter has its own 3 tests; block list lives in Settings → Capsule and lists every package that has pushed |
+| Public intent API with validation, 4/sec/package rate limit, block-list screen | **Done, tested, and exercised on the emulator** — a real `am broadcast` push reached the pill and drew its progress on the rim. Served by a context-registered receiver because manifest receivers stopped seeing implicit broadcasts in Android 8 (D27) |
 | Sources: call, navigation, capture, media, transfer | **Absent.** All five need either notification-listener consent (§10) or a permission. Only the three permission-free sources ship: clock, battery, next alarm |
 | Cards reorder with animation, never popping in or out | **Partial.** Entry and exit cross-fade and the container morphs, but reordering inside the deck is not yet a per-card animated transition |
 
@@ -83,7 +87,7 @@ channel and sleeps exactly until the arbiter's next deadline rather than polling
 publishes the three permission-free sources; `CapsulePushReceiver` implements §4.1 with validation,
 truncation, the priority clamp and creator-package attribution; `CapsuleHost` draws the pill.
 
-**65 unit tests pass** (21 design-token, 21 layout-engine, 20 arbiter, 3 rate-limiter).
+**75 unit tests pass** (21 design-token, 21 layout-engine, 23 arbiter, 3 rate-limiter, 7 docking-geometry).
 `:core:data` carries the `LauncherApps` index (work profiles, incremental package reloads, category
 heuristics), the two-tier icon cache with the debug main-thread assertion, Room layout persistence,
 Proto DataStore prefs and usage stats, wallpaper offsets + luminance sampling for the contrast
@@ -91,10 +95,11 @@ floor, and RoleManager default-home plumbing.
 
 ## Known gaps and honest omissions
 
-* **The Capsule is not yet verified on a running device.** It compiles, its logic is unit-tested,
-  and it is wired into the composition root — but the emulator available here died mid-verification
-  (system_server crash, then a window manager left with two windows and no SystemUI), so the pill
-  has not been seen on a screen. Nothing in this file claims otherwise.
+* **The Capsule is emulator-verified, not hardware-verified.** Screenshots confirm: the fallback
+  pill docked under the status bar, the pushed card taking the front with 62% of the silhouette
+  stroked, tap-to-expand with the persistent header, and abandoned-progress expiry. Not seen
+  anywhere yet: the actual cutout embrace (no emulated cutout is a small centred hole — unit
+  tests carry it until the Flip), the shuffle/dismiss gestures, and every question of feel.
 * **Optical sizing (§3) is unmet.** D4 defers the typeface to the platform variable sans, which has
   a weight axis but no `opsz` axis. Revisit before Phase 4.
 * **Nothing is measured yet.** Every §11 budget is currently unproven. No number will appear in this
