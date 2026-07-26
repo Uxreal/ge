@@ -42,6 +42,8 @@ import dev.lumen.launcher.core.design.theme.LumenThemeConfig
 import dev.lumen.launcher.core.design.theme.LocalTypography
 import dev.lumen.launcher.core.design.theme.LumenTypography
 import dev.lumen.launcher.core.design.theme.ThemeMode
+import dev.lumen.launcher.feature.capsule.CapsuleViewModel
+import dev.lumen.launcher.feature.capsule.ui.CapsuleHost
 import dev.lumen.launcher.feature.drawer.DrawerScreen
 import dev.lumen.launcher.feature.drawer.DrawerViewModel
 import dev.lumen.launcher.feature.home.HomeViewModel
@@ -51,6 +53,7 @@ import dev.lumen.launcher.feature.settings.SettingsScreen
 import dev.lumen.launcher.feature.settings.SettingsViewModel
 import dev.lumen.launcher.feature.widgets.WidgetFrame
 import dev.lumen.launcher.feature.widgets.WidgetPickerSheet
+import androidx.compose.foundation.layout.safeDrawingPadding
 import dev.lumen.launcher.ui.onboarding.OnboardingOverlay
 
 /** Which full-screen surface sits above the home grid. At most one. */
@@ -66,6 +69,7 @@ fun LauncherRoot(
     homeVm: HomeViewModel,
     drawerVm: DrawerViewModel,
     settingsVm: SettingsViewModel,
+    capsuleVm: CapsuleViewModel,
 ) {
     val prefs by homeVm.prefs.collectAsStateWithLifecycle()
 
@@ -90,6 +94,22 @@ fun LauncherRoot(
         val homeState = remember { HomeState() }
         var overlay by remember { mutableStateOf(Overlay.NONE) }
         val view = LocalView.current
+
+        // The user leaves for the system's default-apps screen and comes straight back, so the
+        // check must re-run on every resume — not once.
+        var isDefaultHome by remember { mutableStateOf(DefaultHome.isDefault(activity)) }
+        androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+            isDefaultHome = DefaultHome.isDefault(activity)
+        }
+        val requestDefaultHome: () -> Unit = {
+            val intent = DefaultHome.requestRoleIntent(activity)
+            if (intent != null) {
+                runCatching { activity.startActivity(intent) }
+                    .onFailure { DefaultHome.openHomeSettings(activity) }
+            } else {
+                DefaultHome.openHomeSettings(activity)
+            }
+        }
 
         // §5 home-press sequence: close sheet → exit wiggle → page 1. One step per press.
         LaunchedEffect(activity) {
@@ -150,6 +170,11 @@ fun LauncherRoot(
                             val scaled = 0.5f + (fraction - 0.5f) * prefs.parallax
                             homeVm.wallpaper.setOffsets(view.windowToken, scaled)
                         },
+                        onOpenDrawer = if (prefs.homeModel == HomeModel.FREEFORM) {
+                            { overlay = Overlay.DRAWER }
+                        } else {
+                            null
+                        },
                         onRequestWidgetPicker = { overlay = Overlay.WIDGET_PICKER },
                         onRequestSettings = { overlay = Overlay.SETTINGS },
                         onReleaseWidget = { id -> activity.widgetHost.releaseId(id) },
@@ -165,11 +190,38 @@ fun LauncherRoot(
                     )
                 }
 
+                // ---- the Capsule ----------------------------------------------------------
+                // §1: the single pill at the top, and the only handle the OS gets on this screen.
+                // It sits above the backdrop source so it refracts the home surface, and it is
+                // hidden whenever a full-screen lens or onboarding owns the display.
+                // Wiggle mode's chip bar owns the same strip, so the two never share it.
+                if (prefs.capsuleEnabled && prefs.onboardingDone &&
+                    overlay == Overlay.NONE && !homeState.editMode
+                ) {
+                    val deck by capsuleVm.deck.collectAsStateWithLifecycle()
+                    CapsuleHost(
+                        deck = deck,
+                        capture = capture,
+                        onPin = capsuleVm::pinFront,
+                        onDismiss = capsuleVm::dismiss,
+                        onLaunch = { intent -> runCatching { intent.send() } },
+                        modifier = Modifier
+                            .align(androidx.compose.ui.Alignment.TopCenter)
+                            .safeDrawingPadding()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+
                 // ---- lenses ---------------------------------------------------------------
                 DrawerScreen(
                     vm = drawerVm,
                     visible = overlay == Overlay.DRAWER,
                     onDismiss = { overlay = Overlay.NONE },
+                    onAddToHome = if (prefs.homeModel == HomeModel.FREEFORM) {
+                        { key -> homeVm.addToHome(key) }
+                    } else {
+                        null
+                    },
                 )
 
                 SettingsScreen(
@@ -177,14 +229,7 @@ fun LauncherRoot(
                     visible = overlay == Overlay.SETTINGS,
                     onDismiss = { overlay = Overlay.NONE },
                     onSetHomeModel = { model -> homeVm.setModel(model) },
-                    onRequestDefaultHome = {
-                        val intent = DefaultHome.requestRoleIntent(activity)
-                        if (intent != null) {
-                            runCatching { activity.startActivity(intent) }
-                        } else {
-                            DefaultHome.openHomeSettings(activity)
-                        }
-                    },
+                    onRequestDefaultHome = requestDefaultHome,
                     versionName = BuildConfig.VERSION_NAME,
                 )
 
@@ -201,21 +246,26 @@ fun LauncherRoot(
                     onDismiss = { overlay = Overlay.NONE },
                 )
 
-                // FREEFORM: swipe up from the bottom edge opens the drawer.
-                if (prefs.homeModel == HomeModel.FREEFORM && overlay == Overlay.NONE) {
-                    DrawerEdge(
-                        onOpen = { overlay = Overlay.DRAWER },
-                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                // The banner that answers "I can't use it as my launcher": visible whenever
+                // Lumen is not the default home, one tap to the system prompt.
+                if (!isDefaultHome && prefs.homeModel != null && prefs.onboardingDone &&
+                    overlay == Overlay.NONE && !homeState.editMode
+                ) {
+                    DefaultHomeBanner(
+                        onSet = requestDefaultHome,
+                        modifier = Modifier
+                            .align(androidx.compose.ui.Alignment.TopCenter)
+                            .safeDrawingPadding()
+                            .padding(top = 10.dp),
                     )
                 }
 
-                if (prefs.homeModel == null) {
+                if (prefs.homeModel == null || !prefs.onboardingDone) {
                     OnboardingOverlay(
-                        onChooseModel = { model ->
-                            homeVm.setModel(model)
-                            val intent = DefaultHome.requestRoleIntent(activity)
-                            if (intent != null) runCatching { activity.startActivity(intent) }
-                        },
+                        needsModel = prefs.homeModel == null,
+                        onChooseModel = { model -> homeVm.setModel(model) },
+                        onRequestDefaultHome = requestDefaultHome,
+                        onDone = { homeVm.completeOnboarding() },
                     )
                 }
 
@@ -236,27 +286,6 @@ fun LauncherRoot(
             }
         }
     }
-}
-
-/**
- * A 24dp strip along the bottom edge that catches the upward fling into the drawer. Deliberately
- * narrow so it never competes with grid drags or the pager.
- */
-@Composable
-private fun DrawerEdge(onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .pointerInput(onOpen) {
-                detectVerticalDragGestures { change, dragAmount ->
-                    if (dragAmount < -18f) {
-                        change.consume()
-                        onOpen()
-                    }
-                }
-            },
-    )
 }
 
 /** The last run crashed: one card, the first stack frame, share and dismiss. */
@@ -293,5 +322,28 @@ private fun CrashCard(
             TextButton(onClick = onShare) { Text("Share log") }
             TextButton(onClick = onDismiss) { Text("Dismiss") }
         }
+    }
+}
+
+/** Lumen is installed but not the Home app: nothing works until this is tapped. Say so, plainly. */
+@Composable
+private fun DefaultHomeBanner(onSet: () -> Unit, modifier: Modifier = Modifier) {
+    val typography = LocalTypography.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.large)
+            .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        BasicText(
+            text = "Lumen isn't your Home app yet",
+            style = typography.tileLabel.copy(
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+        )
+        TextButton(onClick = onSet) { Text("Set as Home") }
     }
 }

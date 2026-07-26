@@ -26,6 +26,7 @@ rootProject.name = "Lumen"
 include(":app")
 include(":core:design")
 include(":core:data")
+include(":feature:capsule")
 include(":feature:home")
 include(":feature:drawer")
 include(":feature:widgets")

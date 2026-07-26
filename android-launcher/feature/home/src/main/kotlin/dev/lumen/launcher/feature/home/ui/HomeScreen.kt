@@ -1,6 +1,7 @@
 package dev.lumen.launcher.feature.home.ui
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,9 +12,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -21,6 +24,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -38,6 +43,7 @@ import dev.lumen.launcher.core.design.grid.computeGridGeometry
 import dev.lumen.launcher.core.design.interaction.Haptics
 import dev.lumen.launcher.core.design.interaction.LocalHaptics
 import dev.lumen.launcher.core.design.motion.LocalMotion
+import dev.lumen.launcher.core.design.surface.LocalBackdropCapture
 import dev.lumen.launcher.core.design.theme.LocalTypography
 import dev.lumen.launcher.feature.home.HomeViewModel
 import kotlin.math.abs
@@ -55,6 +61,8 @@ fun HomeScreen(
     homeState: HomeState,
     modifier: Modifier = Modifier,
     onPagerChanged: (page: Int, offset: Float, count: Int) -> Unit = { _, _, _ -> },
+    /** FREEFORM: swipe up anywhere on the home surface opens the drawer. Null disables it. */
+    onOpenDrawer: (() -> Unit)? = null,
     onRequestWidgetPicker: () -> Unit = {},
     onRequestSettings: () -> Unit = {},
     onReleaseWidget: (Int) -> Unit = {},
@@ -137,6 +145,19 @@ fun HomeScreen(
             }
         }
 
+        // A frosted surface has no way to know the pixels behind it moved, so the pager holds a
+        // redraw ticket for exactly as long as it is scrolling. Without this the Capsule's blur
+        // freezes mid-swipe; with it always on, a still home screen would re-record every frame.
+        val capture = LocalBackdropCapture.current
+        DisposableEffect(capture) {
+            onDispose { capture?.setAnimating(PAGER_TICKET, false) }
+        }
+        LaunchedEffect(pagerState, capture) {
+            snapshotFlow { pagerState.isScrollInProgress }.collect { scrolling ->
+                capture?.setAnimating(PAGER_TICKET, scrolling)
+            }
+        }
+
         CompositionLocalProvider(LocalViewConfiguration provides liftConfiguration) {
             HorizontalPager(
                 state = pagerState,
@@ -147,7 +168,8 @@ fun HomeScreen(
                 ),
                 modifier = Modifier
                     .fillMaxSize()
-                    .emptySpaceGestures(homeState, haptics),
+                    .emptySpaceGestures(homeState, haptics)
+                    .drawerSwipe(homeState, onOpenDrawer),
             ) { page ->
                 PageGrid(
                     vm = vm,
@@ -158,6 +180,7 @@ fun HomeScreen(
                     pagerState = pagerState,
                     onReleaseWidget = onReleaseWidget,
                     widgetContent = widgetContent,
+                    modifier = Modifier.pageDepth(pagerState, page, motion.reduceMotion),
                 )
             }
         }
@@ -174,12 +197,32 @@ fun HomeScreen(
             DragOverlay(vm = vm, session = session, geometry = geometry)
         }
 
+        // FREEFORM, empty page: say how to fill it instead of presenting bare wallpaper.
+        if (onOpenDrawer != null && workspace.seeded && workspace.items.isEmpty() &&
+            drag == null && !homeState.editMode
+        ) {
+            EmptyHomeHint(
+                onOpenDrawer = onOpenDrawer,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+
         PageIndicator(
             pagerState = pagerState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .offset(y = -insets.calculateBottomPadding()),
         )
+
+        // The drawer's visible affordance: a small handle above the page dots.
+        if (onOpenDrawer != null && drag == null) {
+            DrawerHandle(
+                onOpenDrawer = onOpenDrawer,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = -insets.calculateBottomPadding() - 22.dp),
+            )
+        }
 
         if (homeState.editMode && drag == null) {
             EditModeBar(
@@ -208,6 +251,76 @@ fun HomeScreen(
     }
 }
 
+/**
+ * The launcher's page transition. §1.1 rules out bouncy horizontal paging, so the character has to
+ * come from depth rather than from spring overshoot: the outgoing page recedes and dims while its
+ * contents lag the swipe, so pages read as sheets sliding over one another instead of a filmstrip.
+ *
+ * Reduce-motion drops all of it and pages flat, which is the point of the setting.
+ */
+private fun Modifier.pageDepth(pagerState: PagerState, page: Int, reduceMotion: Boolean): Modifier {
+    if (reduceMotion) return this
+    return graphicsLayer {
+        val offset =
+            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+        val distance = abs(offset).coerceIn(0f, 1f)
+
+        // Contents move at 80% of the page, so the grid trails the gesture by a few dp.
+        translationX = offset * size.width * PAGE_PARALLAX
+        val recede = 1f - PAGE_RECEDE * distance
+        scaleX = recede
+        scaleY = recede
+        alpha = 1f - PAGE_DIM * distance
+        // A shallow turn, with the camera far enough back that it reads as depth rather than as a
+        // 3D effect. Pivot on the trailing edge so adjacent pages hinge against each other.
+        cameraDistance = PAGE_CAMERA * density
+        rotationY = offset * PAGE_TURN_DEG
+        transformOrigin = TransformOrigin(if (offset > 0f) 1f else 0f, 0.5f)
+    }
+}
+
+/**
+ * FREEFORM's drawer gesture: an upward swipe anywhere on the home surface (like the Pixel
+ * launcher). Horizontal motion belongs to the pager and item drags consume their own events first,
+ * so this only sees what nothing else wanted.
+ *
+ * Distance alone was the wrong test: a fast flick covers less ground before the finger leaves the
+ * glass than a slow drag does, so the quick, confident swipe — the one people actually make — was
+ * the one that failed. A short throw counts when it is fast enough.
+ */
+private fun Modifier.drawerSwipe(homeState: HomeState, onOpenDrawer: (() -> Unit)?): Modifier {
+    if (onOpenDrawer == null) return this
+    return pointerInput(homeState, onOpenDrawer) {
+        val slowThreshold = 72.dp.toPx()
+        val flickThreshold = 24.dp.toPx()
+        var total = 0f
+        var startedAt = 0L
+        var fired = false
+
+        detectVerticalDragGestures(
+            onDragStart = {
+                total = 0f
+                fired = false
+                startedAt = 0L
+            },
+            onVerticalDrag = { change, dragAmount ->
+                if (startedAt == 0L) startedAt = change.uptimeMillis
+                total += dragAmount
+                if (fired || homeState.drag != null || homeState.editMode) return@detectVerticalDragGestures
+
+                val elapsed = (change.uptimeMillis - startedAt).coerceAtLeast(1L)
+                val upwardSpeed = -total / elapsed * 1000f // px per second
+                val flicked = total < -flickThreshold && upwardSpeed > FLICK_SPEED_PX_S
+                if (total < -slowThreshold || flicked) {
+                    fired = true
+                    change.consume()
+                    onOpenDrawer()
+                }
+            },
+        )
+    }
+}
+
 /** Long-press on empty wallpaper enters wiggle mode; a tap leaves it (§5). */
 private fun Modifier.emptySpaceGestures(homeState: HomeState, haptics: Haptics): Modifier =
     pointerInput(homeState) {
@@ -221,6 +334,16 @@ private fun Modifier.emptySpaceGestures(homeState: HomeState, haptics: Haptics):
             },
         )
     }
+
+/** Fast enough to read as a flick rather than a scroll that changed its mind. */
+private const val FLICK_SPEED_PX_S = 850f
+
+private const val PAGE_PARALLAX = 0.20f
+private const val PAGE_RECEDE = 0.10f
+private const val PAGE_DIM = 0.35f
+private const val PAGE_TURN_DEG = 6f
+private const val PAGE_CAMERA = 18f
+private const val PAGER_TICKET = "home-pager"
 
 internal const val LIFT_MS = 280L
 internal const val SWAP_DWELL_MS = 200L

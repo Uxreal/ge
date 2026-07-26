@@ -172,7 +172,14 @@ internal fun FolderSheet(
                     .safeDrawingPadding()
                     .padding(12.dp),
             ) {
-                sheet()
+                Box(
+                    modifier = Modifier.background(
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.82f),
+                        MaterialTheme.shapes.extraLarge,
+                    ),
+                ) {
+                    sheet()
+                }
             }
         } else {
             // No backdrop capture (previews, tests): a plain surface panel instead of frosted glass.

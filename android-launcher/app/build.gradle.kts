@@ -9,8 +9,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.lumen.launcher"
-        versionCode = 2
-        versionName = "0.1.1-phase1"
+        versionCode = 4
+        versionName = "0.3.0-capsule"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -44,6 +44,7 @@ android {
 dependencies {
     implementation(project(":core:design"))
     implementation(project(":core:data"))
+    implementation(project(":feature:capsule"))
     implementation(project(":feature:home"))
     implementation(project(":feature:drawer"))
     implementation(project(":feature:widgets"))

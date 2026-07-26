@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -105,7 +107,13 @@ class BackdropCapture internal constructor(internal val layer: GraphicsLayer) {
 
     private val tickets = mutableStateMapOf<String, Unit>()
 
-    val isAnimating: Boolean get() = tickets.isNotEmpty()
+    /** Frosted surfaces currently mounted. Zero means nothing is sampling us. */
+    internal var consumers by mutableIntStateOf(0)
+
+    val isAnimating: Boolean get() = tickets.isNotEmpty() && consumers > 0
+
+    /** True only when something is actually going to sample the capture. */
+    internal val isNeeded: Boolean get() = consumers > 0
 
     /**
      * A frosted surface cannot know when the pixels behind it changed, so anything animating the
@@ -136,7 +144,7 @@ fun Modifier.backdropSource(capture: BackdropCapture): Modifier = this
     .onGloballyPositioned { capture.rootCoordinates = it }
     .drawWithContent {
         val target = IntSize(size.width.toInt(), size.height.toInt())
-        if (target.width > 0 && target.height > 0) {
+        if (capture.isNeeded && target.width > 0 && target.height > 0) {
             capture.layer.record(this, layoutDirection, target) {
                 this@drawWithContent.drawContent()
             }
@@ -162,6 +170,11 @@ fun Modifier.frosted(
     smoothness: Float = Superellipse.DEFAULT_SMOOTHNESS,
 ): Modifier {
     if (!tokens.enabled) return this.opaqueSurface(tokens.tint, cornerRadius, smoothness)
+
+    DisposableEffect(capture) {
+        capture.consumers += 1
+        onDispose { capture.consumers -= 1 }
+    }
 
     val panelLayer = rememberGraphicsLayer()
     val shader = remember {

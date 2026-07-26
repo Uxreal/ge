@@ -20,6 +20,12 @@ message LumenPrefs {
   bool onboarding_done = 12;
   float smoothness = 13;        // superellipse n, 2.0..6.0; 0 -> 4.6
   bool workspace_seeded = 14;
+
+  // §4.1: every package that has pushed a Capsule card, and the ones the user has switched off.
+  // A block list you can only populate by guessing package names is not a block list.
+  repeated string capsule_seen_packages = 15;
+  repeated string capsule_blocked_packages = 16;
+  bool capsule_off = 17;        // inverted so the zero-value means "Capsule on"
 }
 
 // Launch statistics for the drawer's suggested-apps row (§6).

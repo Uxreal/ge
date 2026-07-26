@@ -61,6 +61,10 @@ data class PrefsSnapshot(
     val onboardingDone: Boolean,
     val smoothness: Float,
     val workspaceSeeded: Boolean,
+    val capsuleEnabled: Boolean,
+    /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
+    val capsuleSeenPackages: List<String>,
+    val capsuleBlockedPackages: List<String>,
 )
 
 @Singleton
@@ -98,6 +102,28 @@ class PrefsRepository @Inject constructor(
     fun setOnboardingDone() = update { it.onboardingDone = true }
     fun setSmoothness(n: Float) = update { it.smoothness = n.coerceIn(2f, 6f) }
     fun setWorkspaceSeeded() = update { it.workspaceSeeded = true }
+
+    fun setCapsuleEnabled(enabled: Boolean) = update { it.capsuleOff = !enabled }
+
+    /** Capped so a package that renames itself in a loop cannot grow the prefs file without end. */
+    fun rememberCapsulePackage(pkg: String) = update { builder ->
+        if (pkg in builder.capsuleSeenPackagesList) return@update
+        val kept = (builder.capsuleSeenPackagesList + pkg).takeLast(MAX_SEEN_PACKAGES)
+        builder.clearCapsuleSeenPackages().addAllCapsuleSeenPackages(kept)
+    }
+
+    fun blockCapsulePackage(pkg: String) = update { builder ->
+        if (pkg !in builder.capsuleBlockedPackagesList) builder.addCapsuleBlockedPackages(pkg)
+    }
+
+    fun unblockCapsulePackage(pkg: String) = update { builder ->
+        val kept = builder.capsuleBlockedPackagesList.filterNot { it == pkg }
+        builder.clearCapsuleBlockedPackages().addAllCapsuleBlockedPackages(kept)
+    }
+
+    private companion object {
+        const val MAX_SEEN_PACKAGES = 64
+    }
 }
 
 private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
@@ -113,4 +139,7 @@ private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
     onboardingDone = onboardingDone,
     smoothness = if (smoothness in 2f..6f) smoothness else 4.6f,
     workspaceSeeded = workspaceSeeded,
+    capsuleEnabled = !capsuleOff,
+    capsuleSeenPackages = capsuleSeenPackagesList,
+    capsuleBlockedPackages = capsuleBlockedPackagesList,
 )

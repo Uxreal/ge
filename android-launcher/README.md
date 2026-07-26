@@ -1,15 +1,84 @@
 # Lumen
 
 An Android home-screen replacement with one identity commitment (§1 of the build spec): **a single
-anchor at the top of the screen is the OS's only handle** — the Capsule, arriving in Phase 2 — and a
+anchor at the top of the screen is the OS's only handle** — the **Capsule** — and a
 **bottom-anchored grid**: page 1 fills from the bottom up, so icons live where your thumb is and
 empty space collects at the top, where the Capsule and widgets belong.
 
 Kotlin, Jetpack Compose, Room, Proto DataStore, Hilt. minSdk 30. **No network access, ever** — no
 analytics, no crash SDKs, no telemetry. Sideload distribution by design (`DECISIONS.md` D2).
 
-Current state: **Phase 1** (a real launcher). `STATUS.md` is the honest ledger of what is done,
-what is coded but unverified on hardware, and what is deliberately absent.
+Current state: **Phase 1 complete in code, Phase 2 (the Capsule) underway.** `STATUS.md` is the
+honest ledger of what is done, what is coded but unverified on hardware, and what is deliberately
+absent.
+
+## The Capsule
+
+A pill docked under the status bar, and the only chrome Lumen puts on your home screen. It has four
+states — nothing at all, a compact glance, an expanded card, and a deck when more than one thing is
+happening — and it decides what to show with the arbitration rules in §4 of the spec: an 800ms dwell
+before a source may claim the front (so a notification that immediately rewrites itself cannot make
+the pill flicker), a 400ms coalesce window, dedupe by package and activity kind, and an 8-second
+manual hold when you swipe the deck yourself. Those rules are unit-tested against a virtual clock.
+
+Three things make it look like Lumen's rather than like everyone else's take on a pill:
+
+* **Its outline is the progress indicator.** Nothing is added inside the pill — a segment of the
+  superellipse silhouette itself is stroked, clockwise from top-centre for determinate progress and
+  as a short travelling comet for indeterminate.
+* **The deck is drawn as shoulders**, not as a stack of cards: cards behind the front one appear as
+  narrower slivers emerging from underneath it.
+* **The container morphs; the type cross-fades.** Width, height and corner radius animate on the
+  `morph` spring while the content swaps on the 120ms cross-fade — §1.1 forbids scaling text during
+  a container morph, and this is what honouring that looks like.
+
+Interactions: tap expands, long-press expands with actions, swipe left/right shuffles the deck,
+flick up dismisses a dismissible card, drag down expands. Every transition fires the `state` haptic.
+
+**Built-in sources need no permissions and make no network calls:** the ambient clock and date, the
+battery (a card on plug/unplug, a persistent one below 15%), and the next alarm from
+`AlarmManager.getNextAlarmClock()` — priority 850 inside the final minute, 400 before that. Media
+playback is deliberately absent: `MediaSessionManager` needs notification-listener consent, which is
+a decision for you to make rather than a default to ship.
+
+### Pushing your own cards
+
+Any app, Tasker task or shell script can push a card. No permission is required.
+
+```bash
+adb shell am broadcast \
+  -a dev.lumen.launcher.capsule.PUSH \
+  --es id "build.status" \
+  --es pkg "com.my.tool" \
+  --es collapsedText "CI 62%" \
+  --es title "Deploying" \
+  --es subtitle "3 of 5 services live" \
+  --ef progress 0.62 \
+  --ei priority 400
+
+# and to take it away again
+adb shell am broadcast -a dev.lumen.launcher.capsule.CLEAR --es id "build.status"
+```
+
+| Extra | Type | Notes |
+|---|---|---|
+| `id` | String | Required, unique per source and key. What `CLEAR` matches on. |
+| `priority` | Int | Clamped to 0..500 — a third party can never outrank a call. |
+| `collapsedText` | String | ≤12 characters, shown in the compact pill. |
+| `title` / `subtitle` | String | Shown when expanded. |
+| `progress` | Float | 0.0..1.0, or -1 for indeterminate. Drives the rim. |
+| `iconUri` | String | `content://` or `android.resource://` only. |
+| `accentColor` | Int | Blended toward the theme, never used raw. |
+| `tapIntent` | PendingIntent | Also how Lumen proves who you are — see below. |
+| `actionLabel0..2` | String | With matching `actionIntent0..2` PendingIntents. |
+| `expiresAt` | Long | Epoch ms. Past, absent or beyond 24h means no expiry. |
+| `dismissible` | Boolean | Default true. |
+
+Malformed pushes are dropped silently and logged at debug. Pushes are rate-limited to four per
+second per package. A broadcast carries no trustworthy caller identity, so Lumen attributes a card
+to `PendingIntent.getCreatorPackage()` when one is supplied — the system fills that in and it cannot
+be forged — and falls back to a self-declared `pkg` extra otherwise. Every package that has pushed
+appears in **Settings → Capsule**, where you can switch it off.
 
 ## What Phase 1 gives you
 
@@ -70,7 +139,7 @@ Requires JDK 17+ and the Android SDK (compileSdk 36).
 cd android-launcher
 ./gradlew :app:assembleDebug          # debug APK
 ./gradlew :app:assembleRelease        # R8-minified, debug-signed (sideload build)
-./gradlew test                        # unit tests (design tokens + layout engine)
+./gradlew test                        # unit tests (design tokens, layout engine, Capsule arbiter)
 ./gradlew :benchmark:connectedBenchmarkAndroidTest   # §11 budgets — physical device required
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -85,6 +154,8 @@ core/design/               §3 tokens: Superellipse, MotionTokens, Haptics, Cont
 core/data/                 Room grid persistence, Proto DataStore prefs + usage, LauncherApps index,
                            two-tier IconCache (main-thread decode asserted), wallpaper offsets +
                            luminance map, RoleManager plumbing.  No dependency on core/design.
+feature/capsule/           CapsuleArbiter (pure; §4's dwell/coalesce/dedupe/override rules),
+                           permission-free system sources, the §4.1 push receiver, and the pill
 feature/home/              LayoutEngine (pure; flow order, PACKED reflow, FREEFORM invariants),
                            HomeScreen (pager, grid, §5 drag, wiggle, folders, indicator)
 feature/drawer/            drawer + fast-scroll + suggestions + type-to-launch

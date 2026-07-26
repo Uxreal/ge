@@ -3,7 +3,10 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.1.1 — verified on an Android 15 emulator: onboarding renders, PACKED seeds a bottom-anchored grid with icons, taps launch apps. The 0.1.0 black-screen field report was reproduced and root-caused (R8/Kotlin metadata mismatch); minification is off until its output is re-verified.
+Last updated: 0.3.0 — the Capsule (§4) exists: arbitration, permission-free system sources, the
+public push API, and the pill itself. Phase 2 was started before Phase 1's two measured criteria
+were met; that is a user-directed deviation from §0's phase order and is recorded as D18 rather
+than papered over.
 
 ---
 
@@ -11,9 +14,9 @@ Last updated: 0.1.1 — verified on an Android 15 emulator: onboarding renders, 
 
 | Phase | State | Notes |
 |---|---|---|
-| 1 — A real launcher | **In progress** | Module restructure underway; §14 decisions recorded |
-| 2 — Capsule core | Not started | Blocked on Phase 1 acceptance |
-| 3 — Stacked + peel + control panel + search | Not started | Blocked on Phase 2 |
+| 1 — A real launcher | **Complete in code, two criteria unmeasured** | Everything below is implemented; cold-start and reboot-survival still need a device |
+| 2 — Capsule core | **In progress** | Arbiter + sources + push API + UI landed; deck persistence and media source deliberately absent |
+| 3 — Stacked + peel + control panel + search | Not started | `STACKED` landed early with Phase 2; peel, control panel and search are untouched |
 | 4 — Theming, edge panels, focus modes, adaptive, backup | Not started | Blocked on Phase 3 |
 
 ## Phase 1 acceptance criteria — current state
@@ -27,17 +30,32 @@ Last updated: 0.1.1 — verified on an Android 15 emulator: onboarding renders, 
 | Grid + both home models (`PACKED`, `FREEFORM`) | **Done in code** — bottom-gravity flow order, PACKED reflow around pinned widgets, FREEFORM never moves placed items; 21 engine tests |
 | Drawer, folders, widget hosting | **Done in code** — drawer with A–Z rail/suggestions/type-to-launch; folders with dwell-create, rename, dissolve; real `AppWidgetHost` with bind/configure/resize |
 | Wallpaper offsets | **Done in code** — `setWallpaperOffsets` from the pager, user parallax multiplier 0–1.5 |
-| Settings skeleton | **Done in code** — Compose (not PreferenceScreen), collapsing header via cross-fade, model/columns/theme/motion/haptics/shape |
+| Settings skeleton | **Done in code** — Compose (not PreferenceScreen), collapsing header via cross-fade, model/columns/theme/motion/haptics/shape/Capsule |
 | Room persistence | **Done in code** — transactional `replaceAll`, conflated writes, destructive-migration fallback so a corrupt DB can never crash-loop the home screen |
 | §3 design tokens as the single source of truth | **Done** — implemented in `:core:design`, 21 unit tests pass |
 
+## Phase 2 acceptance criteria — current state
+
+| Criterion (§4 / §13) | State |
+|---|---|
+| Four states: `DORMANT` / `GLANCE` / `EXPANDED` / `STACKED` | **Done in code.** `DORMANT` is reachable but not the resting state — D19 keeps an ambient clock source alive at priority 100 so the Capsule is a permanent handle |
+| Arbitration: 800ms front dwell, 400ms coalesce, dedupe by package + kind, 8s manual hold, priority order, expiry | **Done and tested** — 20 unit tests against a virtual clock, including the flicker case (a source re-pushing itself does not re-arm its own dwell) |
+| Auto-expand once for 2.5s at priority ≥800 | **Done and tested** |
+| Deck shuffle by horizontal swipe, width animates to each card | **Done in code** — `animateContentSize` on the `morph` spring; feel unverified on hardware |
+| Dot rail showing depth | **Done in code** |
+| Peel: drag down past 96dp into a floating home card | **Absent by choice (D22).** Drag down expands instead. The peeled home card is a Phase 3 item in §13 |
+| Persist deck across process death | **Absent by choice (D20)** — `PendingIntent`s cannot be serialised, so a restored card would look alive and do nothing |
+| Public intent API with validation, 4/sec/package rate limit, block-list screen | **Done and tested** — rate limiter has its own 3 tests; block list lives in Settings → Capsule and lists every package that has pushed |
+| Sources: call, navigation, capture, media, transfer | **Absent.** All five need either notification-listener consent (§10) or a permission. Only the three permission-free sources ship: clock, battery, next alarm |
+| Cards reorder with animation, never popping in or out | **Partial.** Entry and exit cross-fade and the container morphs, but reordering inside the deck is not yet a per-card animated transition |
+
 ## What exists right now
 
-**Build (verified).** Nine Gradle projects configure and `:core:design` compiles: `:app`,
-`:core:design`, `:core:data`, `:feature:{home,drawer,widgets,settings}`, `:benchmark`, plus the
-`build-logic` included build holding four convention plugins. The full pinned set resolves — Hilt,
-Room, KSP, Proto DataStore with a real protoc binary, Macrobenchmark. Module boundaries are enforced
-by dependency declarations, and `:core:data` deliberately does not depend on `:core:design`.
+**Build (verified).** Ten Gradle projects configure and build: `:app`, `:core:design`, `:core:data`,
+`:feature:{capsule,home,drawer,widgets,settings}`, `:benchmark`, plus the `build-logic` included
+build holding four convention plugins. Module boundaries are enforced by dependency declarations:
+`:feature:capsule` does not depend on `:feature:home`, and `:core:data` does not depend on
+`:core:design`.
 
 **`:core:design` — §3 tokens, complete and tested (21 unit tests, 0 failures).**
 
@@ -55,35 +73,42 @@ by dependency declarations, and `:core:data` deliberately does not depend on `:c
 * `Depth` — one shadow token, the 1dp inner highlight and the 0.5dp hairline. No elevation stack.
 * `GridGeometry` — §3's derivation, tested against the formulas including both icon-size clamps and
   the five-row floor. Default gravity is `BOTTOM` (§1).
-* `FrostedSurface` — the frosted material: backdrop capture, AGSL lens on API 33+, `RenderEffect`
-  blur on 31–32, translucency on 30, per-`SurfaceRole` tokens, and redraw tickets so a still screen
-  costs nothing.
+* `FrostedSurface` — the frosted material: reference-counted backdrop capture (D24), AGSL lens on
+  API 33+, `RenderEffect` blur on 31–32, translucency on 30, per-`SurfaceRole` tokens, and redraw
+  tickets so a still screen costs nothing.
 
-**Everything compiles and 42 unit tests pass** (21 design-token, 21 layout-engine). `:core:data`
-now carries the `LauncherApps` index (work profiles, incremental package reloads, category
+**`:feature:capsule` — new.** `CapsuleArbiter` is pure and clock-injected, which is what makes §4's
+timing rules testable at all; `CapsuleController` confines it to one coroutine behind a command
+channel and sleeps exactly until the arbiter's next deadline rather than polling; `SystemSources`
+publishes the three permission-free sources; `CapsulePushReceiver` implements §4.1 with validation,
+truncation, the priority clamp and creator-package attribution; `CapsuleHost` draws the pill.
+
+**65 unit tests pass** (21 design-token, 21 layout-engine, 20 arbiter, 3 rate-limiter).
+`:core:data` carries the `LauncherApps` index (work profiles, incremental package reloads, category
 heuristics), the two-tier icon cache with the debug main-thread assertion, Room layout persistence,
 Proto DataStore prefs and usage stats, wallpaper offsets + luminance sampling for the contrast
-floor, and RoleManager default-home plumbing. `:feature:home` has the full §5 interaction set;
-`:feature:drawer`, `:feature:widgets`, `:feature:settings` and `:app` are wired end-to-end,
-including the widget bind/configure Activity flows and the §5 home-press ladder.
+floor, and RoleManager default-home plumbing.
 
 ## Known gaps and honest omissions
 
-* **Optical sizing (§3) is unmet.** D4 defers the typeface to the platform variable sans, which has a
-  weight axis but no `opsz` axis. Revisit before Phase 4.
+* **The Capsule is not yet verified on a running device.** It compiles, its logic is unit-tested,
+  and it is wired into the composition root — but the emulator available here died mid-verification
+  (system_server crash, then a window manager left with two windows and no SystemUI), so the pill
+  has not been seen on a screen. Nothing in this file claims otherwise.
+* **Optical sizing (§3) is unmet.** D4 defers the typeface to the platform variable sans, which has
+  a weight axis but no `opsz` axis. Revisit before Phase 4.
 * **Nothing is measured yet.** Every §11 budget is currently unproven. No number will appear in this
   file without the Macrobenchmark output behind it.
 * **No screenshot matrix yet** (§12). Required for Phase 4 sign-off.
 * **Baseline Profiles are not wired yet.** The `:benchmark` module exists for Macrobenchmark, but the
   `androidx.baselineprofile` producer/consumer wiring needs a device to generate against, so it is
   deferred rather than configured to fail.
-* **Emulator-verified, not yet hardware-verified.** An Android 15 emulator confirms boot,
-  onboarding, seeding, icon rendering and app launches. Drag feel, haptics, widget hosting against
-  real providers, Samsung's wallpaper restrictions, and every §11 number still need a physical
-  device.
-* **Crash visibility now exists**: an uncaught-exception handler writes the trace to a file, and
-  the next launch shows a "Lumen crashed last time" card with a Share action — field reports can
-  carry stack traces from here on.
+* **Emulator-verified through 0.2.0, not hardware-verified.** An Android 15 emulator confirmed boot,
+  onboarding, seeding, icon rendering and app launches for 0.2.0. Drag feel, haptics, the Capsule,
+  widget hosting against real providers, Samsung's wallpaper restrictions, and every §11 number
+  still need a physical device.
+* **Crash visibility exists**: an uncaught-exception handler writes the trace to a file, and the
+  next launch shows a "Lumen crashed last time" card with a Share action.
 * **Phase 1 partials, stated plainly:** no uninstall tombstones, no 20-step undo stack, no
   multi-select drag, no pinch-in wiggle entry, shortcuts (`ShortcutItem`) render defensively but
   nothing creates them yet, FREEFORM hover-to-swap resolves on drop rather than live-swapping at
@@ -92,4 +117,4 @@ including the widget bind/configure Activity flows and the §5 home-press ladder
   against Kotlin 2.2 metadata); AGP is now 8.13 and the shipped build is unminified. Re-enable only
   with an emulator/device pass over the minified output.
 * The pre-spec scaffold contained two §1.1 anti-defaults (page overshoot, blur everywhere). Both are
-  removed as part of the restructure — see D10.
+  removed — see D10.

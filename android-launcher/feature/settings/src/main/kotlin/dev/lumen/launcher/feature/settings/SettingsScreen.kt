@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +67,9 @@ class SettingsViewModel @Inject constructor(
     fun setHideLabels(hide: Boolean) = prefsRepo.setHideLabels(hide)
     fun setParallax(value: Float) = prefsRepo.setParallax(value)
     fun setSmoothness(n: Float) = prefsRepo.setSmoothness(n)
+    fun setCapsuleEnabled(enabled: Boolean) = prefsRepo.setCapsuleEnabled(enabled)
+    fun blockCapsulePackage(pkg: String) = prefsRepo.blockCapsulePackage(pkg)
+    fun unblockCapsulePackage(pkg: String) = prefsRepo.unblockCapsulePackage(pkg)
 }
 
 @Composable
@@ -225,6 +229,37 @@ fun SettingsScreen(
                             vm.setHapticIntensity(listOf("OFF", "LIGHT", "STANDARD", "STRONG")[it])
                         },
                     )
+                }
+
+                item { SectionTitle("Capsule") }
+                item {
+                    SwitchRow(
+                        "Show the Capsule",
+                        "The pill under the status bar. Off hides it entirely.",
+                        prefs.capsuleEnabled,
+                    ) { vm.setCapsuleEnabled(it) }
+                }
+                // §4.1: any app can push a card without a permission, so the defence is a list the
+                // user can actually see. Packages appear here the first time they push.
+                if (prefs.capsuleSeenPackages.isEmpty()) {
+                    item {
+                        RowScaffold(
+                            title = "Apps using the Capsule",
+                            summary = "Nothing has pushed a card yet. Apps appear here the first " +
+                                "time they do, and you can switch any of them off.",
+                        )
+                    }
+                } else {
+                    items(prefs.capsuleSeenPackages, key = { "capsule-$it" }) { pkg ->
+                        val blocked = pkg in prefs.capsuleBlockedPackages
+                        SwitchRow(
+                            title = pkg,
+                            summary = if (blocked) "Blocked" else "Allowed to push cards",
+                            checked = !blocked,
+                        ) { allow ->
+                            if (allow) vm.unblockCapsulePackage(pkg) else vm.blockCapsulePackage(pkg)
+                        }
+                    }
                 }
 
                 item { SectionTitle("System") }

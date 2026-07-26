@@ -220,3 +220,91 @@ a share action on the next launch, so no future field report is ever trace-less.
 
 **Rejected:** keeping minification on the new R8 without re-verification (burned once), and
 treating the report as un-reproducible without device logs (the emulator reproduced it exactly).
+
+## D18 — Phase 2 started before Phase 1's acceptance was measured
+
+**Chosen:** build `:feature:capsule` now, with Phase 1's "cold start < 350ms, proven by
+Macrobenchmark" and "20 reboots + 50 force-stops" criteria still unmeasured.
+
+**Rejected:** holding the Capsule until a physical device is available to measure against.
+
+**Why:** the user directed it explicitly ("make the entire launcher very custom and unique"), and
+the Capsule *is* §1's identity thesis — a launcher without it is a grid. §0 requires phase order,
+so this is a deviation, and the honest response is to record it rather than to quietly redefine
+Phase 1 as done. `STATUS.md` still shows those two criteria as unverified, and they stay unverified
+until there is Macrobenchmark output behind them.
+
+## D19 — The ambient clock is a permanent Capsule source
+
+**Chosen:** a clock/date card at priority 100 that never withdraws, so the Capsule is visible at
+rest rather than only during events.
+
+**Rejected:** true `DORMANT` at rest, which is what §4's table literally describes ("Not drawn. No
+active sources").
+
+**Why:** §1 calls the Capsule "the OS's only handle" and the single anchor the whole layout is
+built around — the grid reserves 56dp for it and gravity pushes icons away from it. A handle that
+is absent 95% of the day is not a handle, and the reserved strip would read as a mistake. §4's
+`DORMANT` state is still implemented and still reachable: turning the Capsule off in Settings, or
+any future build where the clock source is disabled, lands there. This is a default, not a removal.
+
+## D20 — Deck state is not persisted across process death
+
+**Chosen:** the deck rebuilds from live sources on cold start. Third-party pushes do not survive a
+launcher restart.
+
+**Rejected:** §4's "persist deck state across launcher process death; restore without animation".
+
+**Why:** a card's `tapIntent` and actions are `PendingIntent`s, which cannot be serialised. A
+restored card would render but do nothing when tapped — worse than absent, because it looks alive.
+The built-in sources (clock, battery, alarm) re-publish within a second of process start, so what
+persistence would actually buy is a few seconds of stale third-party text with dead buttons.
+Revisit if a push API gains a re-delivery handshake. Listed as a Phase 2 gap in `STATUS.md`.
+
+## D21 — Push identity comes from `PendingIntent.getCreatorPackage()`, not from an extra
+
+**Chosen:** attribute a pushed card to the creator package of its `tapIntent` (or first action
+intent), falling back to a self-declared `pkg` extra and marking the card unverified.
+
+**Rejected:** trusting the `pkg` extra outright, or requiring a signature permission to push.
+
+**Why:** a broadcast receiver has no trustworthy caller identity, so a block list keyed on a
+self-declared string can be defeated by changing the string. `getCreatorPackage()` is filled in by
+the system and cannot be forged, and any push worth blocking almost certainly carries a tap intent.
+§4.1 says explicitly that no permission is required, so a permission wall was out; the defences are
+validation, the 0..500 priority clamp, four pushes/second per package, and a visible block list.
+
+## D22 — Drag-down-to-peel is not wired to a half-implementation
+
+**Chosen:** in the Capsule, drag down expands. The §4 peel gesture is left for Phase 3, which is
+where §13 puts the peeled home card anyway.
+
+**Rejected:** starting the peel animation and dropping the card, or peeling into a floating overlay
+with nowhere to live.
+
+**Why:** §0.2 — no stubs presented as features. A gesture that begins something it cannot finish is
+worse than one that is not there.
+
+## D23 — The page transition is depth, not bounce
+
+**Chosen:** pages recede (0.90×), dim (0.65), parallax their contents at 80% of the swipe, and
+hinge 6° on their trailing edge.
+
+**Rejected:** a plain translate (indistinguishable from every other launcher), and spring overshoot
+on the page settle.
+
+**Why:** §1.1 names bouncy horizontal paging as an anti-default and §3 pins `page` to a critically
+damped 700/1.0, so the character cannot come from the spring. Depth is the axis left open. The
+whole transform is skipped under reduce-motion, which is the setting's actual promise.
+
+## D24 — Backdrop capture is reference-counted
+
+**Chosen:** `BackdropCapture` counts mounted frosted surfaces and records the home surface into its
+`GraphicsLayer` only while at least one exists.
+
+**Rejected:** recording unconditionally (what the first implementation did).
+
+**Why:** with no frosted surface on screen, every home-screen frame was being recorded into a
+full-screen layer and then blitted back — the cost of a blur nobody was drawing. The redraw
+*tickets* are a separate axis and remain: consumers say "someone is sampling us", tickets say "the
+pixels are moving". Both must be true before the frame clock is read.

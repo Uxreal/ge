@@ -134,3 +134,62 @@ private fun EditChip(label: String, onClick: () -> Unit, emphasized: Boolean = f
         BasicText(text = label, style = typography.tileLabel.copy(color = foreground))
     }
 }
+
+/** FREEFORM's visible way into the drawer: a grabber pill that also opens on tap. */
+@Composable
+internal fun DrawerHandle(onOpenDrawer: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 64.dp, height = 26.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "Open app drawer"
+            }
+            .pointerInput(onOpenDrawer) { detectTapGestures(onTap = { onOpenDrawer() }) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 36.dp, height = 4.dp)
+                .drawWithCache {
+                    val pill = Superellipse.path(size, size.height / 2f, 2f)
+                    onDrawBehind { drawPath(pill, Color.White.copy(alpha = 0.65f)) }
+                },
+        )
+    }
+}
+
+/** An empty FREEFORM page explains itself instead of showing bare wallpaper. */
+@Composable
+internal fun EmptyHomeHint(onOpenDrawer: () -> Unit, modifier: Modifier = Modifier) {
+    val typography = LocalTypography.current
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .padding(horizontal = 40.dp)
+            .pointerInput(onOpenDrawer) { detectTapGestures(onTap = { onOpenDrawer() }) },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BasicText(
+            text = "Your home is empty",
+            style = typography.capsuleTitle.copy(
+                color = Color.White,
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    blurRadius = 6f,
+                ),
+            ),
+        )
+        BasicText(
+            text = "Swipe up for your apps, then hold one and choose Add to Home",
+            style = typography.body.copy(
+                color = Color.White.copy(alpha = 0.9f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    blurRadius = 6f,
+                ),
+            ),
+        )
+    }
+}

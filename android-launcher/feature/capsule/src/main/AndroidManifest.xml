@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+            §4.1's public API. Exported and permission-free by design: any app, Tasker script or
+            `adb shell am broadcast` can push a card. The launcher defends itself with validation,
+            a 4-push/second per-package rate limit, a priority clamp at 500 so a third party can
+            never outrank a call, and a user-managed block list — not with a permission wall.
+        -->
+        <receiver
+            android:name=".push.CapsulePushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.lumen.launcher.capsule.PUSH" />
+                <action android:name="dev.lumen.launcher.capsule.CLEAR" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

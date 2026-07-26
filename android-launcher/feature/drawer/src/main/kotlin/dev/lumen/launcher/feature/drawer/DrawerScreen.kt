@@ -109,6 +109,8 @@ fun DrawerScreen(
     visible: Boolean,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    /** FREEFORM only: places the app on the home grid. Null hides the action. */
+    onAddToHome: ((AppKey) -> Boolean)? = null,
 ) {
     val motion = LocalMotion.current
     val typography = LocalTypography.current
@@ -116,7 +118,13 @@ fun DrawerScreen(
     val capture = LocalBackdropCapture.current
 
     var query by remember { mutableStateOf("") }
-    LaunchedEffect(visible) { if (!visible) query = "" }
+    var menuFor by remember { mutableStateOf<AppInfo?>(null) }
+    LaunchedEffect(visible) {
+        if (!visible) {
+            query = ""
+            menuFor = null
+        }
+    }
 
     AnimatedVisibility(
         visible = visible,
@@ -197,7 +205,7 @@ fun DrawerScreen(
                             .padding(bottom = 10.dp),
                     ) {
                         suggestions.forEach { app ->
-                            DrawerAppIcon(vm, app, onLaunched = onDismiss)
+                            DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { menuFor = it })
                         }
                     }
                 }
@@ -212,7 +220,7 @@ fun DrawerScreen(
                     ) {
                         itemsIndexed(filtered, key = { _, app -> app.key.flat }) { _, app ->
                             Box(contentAlignment = Alignment.Center) {
-                                DrawerAppIcon(vm, app, onLaunched = onDismiss)
+                                DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { menuFor = it })
                             }
                         }
                     }
@@ -248,7 +256,15 @@ fun DrawerScreen(
                         .fillMaxSize()
                         .pointerInput(Unit) { detectTapGestures { } },
                 ) {
-                    content()
+                    // Frost alone cannot guarantee legible theme text over an arbitrary
+                    // wallpaper; this wash keeps the blur visible and the text readable.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)),
+                    ) {
+                        content()
+                    }
                 }
             } else {
                 Box(
@@ -260,12 +276,94 @@ fun DrawerScreen(
                     content()
                 }
             }
+
+            menuFor?.let { app ->
+                AppActionMenu(
+                    app = app,
+                    canAddToHome = onAddToHome != null,
+                    canUninstall = vm.canUninstall(app.key),
+                    onAddToHome = {
+                        haptics.snap()
+                        onAddToHome?.invoke(app.key)
+                        menuFor = null
+                        onDismiss()
+                    },
+                    onAppInfo = {
+                        vm.appInfo(app.key)
+                        menuFor = null
+                    },
+                    onUninstall = {
+                        vm.requestUninstall(app.key)
+                        menuFor = null
+                    },
+                    onDismiss = { menuFor = null },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The long-press menu. "Add to Home" is the reason it exists — without it, `FREEFORM` had no way
+ * to put an app on a page at all.
+ */
+@Composable
+private fun AppActionMenu(
+    app: AppInfo,
+    canAddToHome: Boolean,
+    canUninstall: Boolean,
+    onAddToHome: () -> Unit,
+    onAppInfo: () -> Unit,
+    onUninstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val typography = LocalTypography.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
+            .pointerInput(app) { detectTapGestures(onTap = { onDismiss() }) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.78f)
+                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.extraLarge)
+                .pointerInput(Unit) { detectTapGestures { } }
+                .padding(vertical = 10.dp),
+        ) {
+            BasicText(
+                text = app.label,
+                style = typography.capsuleTitle.copy(color = MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+            )
+            if (canAddToHome) MenuRow("Add to Home", onAddToHome)
+            MenuRow("App info", onAppInfo)
+            if (canUninstall) MenuRow("Uninstall", onUninstall)
         }
     }
 }
 
 @Composable
-private fun DrawerAppIcon(vm: DrawerViewModel, app: AppInfo, onLaunched: () -> Unit) {
+private fun MenuRow(label: String, onClick: () -> Unit) {
+    val typography = LocalTypography.current
+    BasicText(
+        text = label,
+        style = typography.body.copy(color = MaterialTheme.colorScheme.onSurface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+    )
+}
+
+@Composable
+private fun DrawerAppIcon(
+    vm: DrawerViewModel,
+    app: AppInfo,
+    onLaunched: () -> Unit,
+    onMenu: (AppInfo) -> Unit,
+) {
     val icon = rememberDrawerIcon(vm.iconCache, app.key, 56.dp)
     AppIcon(
         icon = icon,
@@ -275,24 +373,22 @@ private fun DrawerAppIcon(vm: DrawerViewModel, app: AppInfo, onLaunched: () -> U
         labelColor = MaterialTheme.colorScheme.onSurface,
         accessibilityActions = buildList {
             add(
+                androidx.compose.ui.semantics.CustomAccessibilityAction("Add to Home") {
+                    onMenu(app)
+                    true
+                },
+            )
+            add(
                 androidx.compose.ui.semantics.CustomAccessibilityAction("App info") {
                     vm.appInfo(app.key)
                     true
                 },
             )
-            if (vm.canUninstall(app.key)) {
-                add(
-                    androidx.compose.ui.semantics.CustomAccessibilityAction("Uninstall") {
-                        vm.requestUninstall(app.key)
-                        true
-                    },
-                )
-            }
         },
         onClick = { bounds ->
             if (vm.launch(app.key, bounds)) onLaunched()
         },
-        onLongPress = { vm.appInfo(app.key) },
+        onLongPress = { onMenu(app) },
     )
 }
 

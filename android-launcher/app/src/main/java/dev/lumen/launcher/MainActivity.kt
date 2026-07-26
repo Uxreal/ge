@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import dagger.hilt.android.AndroidEntryPoint
+import dev.lumen.launcher.feature.capsule.CapsuleViewModel
 import dev.lumen.launcher.feature.drawer.DrawerViewModel
 import dev.lumen.launcher.feature.home.HomeViewModel
 import dev.lumen.launcher.feature.settings.SettingsViewModel
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
     val homePresses = Channel<Unit>(Channel.CONFLATED)
 
     private val homeVm: HomeViewModel by viewModels()
+    private val capsuleVm: CapsuleViewModel by viewModels()
     private val drawerVm: DrawerViewModel by viewModels()
     private val settingsVm: SettingsViewModel by viewModels()
 
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
                 homeVm = homeVm,
                 drawerVm = drawerVm,
                 settingsVm = settingsVm,
+                capsuleVm = capsuleVm,
             )
         }
     }

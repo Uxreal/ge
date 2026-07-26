@@ -71,9 +71,10 @@ internal fun PageGrid(
     pagerState: PagerState,
     onReleaseWidget: (Int) -> Unit,
     widgetContent: @Composable (WidgetItem, Modifier, Boolean, (Int, Int) -> Unit) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
         items.forEach { item ->
             key(item.id) {
                 val topLeft = metrics.cellTopLeft(item.cell)

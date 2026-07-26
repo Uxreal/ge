@@ -122,7 +122,13 @@ fun WidgetPickerSheet(
                         .fillMaxSize()
                         .pointerInput(Unit) { detectTapGestures { } },
                 ) {
-                    list()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)),
+                    ) {
+                        list()
+                    }
                 }
             } else {
                 Box(

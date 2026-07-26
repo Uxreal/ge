@@ -7,6 +7,7 @@ import dev.lumen.launcher.core.data.apps.AppRepository
 import dev.lumen.launcher.core.data.apps.UsageRepository
 import dev.lumen.launcher.core.data.icons.IconCache
 import dev.lumen.launcher.core.data.model.AppInfo
+import dev.lumen.launcher.core.data.model.AppItem
 import dev.lumen.launcher.core.data.model.AppKey
 import dev.lumen.launcher.core.data.model.Cell
 import dev.lumen.launcher.core.data.model.GridItem
@@ -121,6 +122,32 @@ class HomeViewModel @Inject constructor(
     fun canUninstall(key: AppKey) = appRepo.canUninstall(key)
 
     fun appLabel(key: AppKey): String = appRepo.app(key)?.label ?: key.packageName
+
+    /**
+     * FREEFORM "Add to Home" from the drawer: the app lands on the first page with room, at the
+     * first free cell in flow order (bottom-up, §1). Already-placed apps are left alone.
+     */
+    fun addToHome(key: AppKey): Boolean {
+        var added = false
+        workspace.mutate { current ->
+            if (current.containsApp(key)) return@mutate current
+            var page = 0
+            var cell: Cell? = null
+            while (page < current.pageCount && cell == null) {
+                cell = LayoutEngine.firstFree(current, page, columns, rows)
+                if (cell == null) page += 1
+            }
+            val target = cell ?: LayoutEngine.cellAtFlowIndex(0, columns, rows)
+            added = true
+            current.copy(
+                items = current.items + AppItem(LayoutEngine.newId("app"), page, target, key),
+                pageCount = maxOf(current.pageCount, page + 1),
+            )
+        }
+        return added
+    }
+
+    fun completeOnboarding() = prefsRepo.setOnboardingDone()
 
     fun move(id: String, page: Int, cell: Cell) =
         workspace.mutate { LayoutEngine.move(it, id, page, cell, model, columns, rows) }
