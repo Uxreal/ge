@@ -31,7 +31,10 @@ object Superellipse {
 
     const val MIN_SMOOTHNESS = 2.0f
     const val MAX_SMOOTHNESS = 6.0f
-    const val DEFAULT_SMOOTHNESS = 4.6f
+    // 3.0, down from the spec's 4.6 (D39, user-directed "more rounded"): 4.6 reads deliberately
+    // squarish, and at small radii it is what makes surfaces look boxy. 3.0 keeps the
+    // superellipse blend — corners still meet edges without a curvature break — but round.
+    const val DEFAULT_SMOOTHNESS = 3.0f
 
     /** Segments per corner. 16 is indistinguishable from smooth at icon sizes and above. */
     private const val SEGMENTS = 16

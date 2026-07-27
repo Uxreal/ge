@@ -285,7 +285,7 @@ fun LetterTile(
     }
 }
 
-const val DEFAULT_MASK_PERCENT = 0.28f
+const val DEFAULT_MASK_PERCENT = 0.34f
 private const val PRESS_SCALE = 1.08f
 private const val WIGGLE_DEGREES = 1.5f
 private const val LABEL_WIDTH_RATIO = 1.7f

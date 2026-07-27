@@ -230,11 +230,12 @@ private fun buildScheme(
 /** Material's shape scale, rebuilt on the superellipse so stock components match the launcher. */
 private fun buildShapes(smoothness: Float): Shapes {
     fun corner(radius: Int) = SuperellipseShape(CornerSize(radius.dp), smoothness)
+    // D39's single ladder: every container in the launcher sits on one of these five stops.
     return Shapes(
-        extraSmall = corner(6),
-        small = corner(12),
-        medium = corner(18),
-        large = corner(26),
+        extraSmall = corner(8),
+        small = corner(14),
+        medium = corner(20),
+        large = corner(28),
         extraLarge = corner(36),
     )
 }

@@ -5,12 +5,12 @@
 
 | File | What it is |
 |---|---|
-| `lumen-latest.apk` | Always the newest build. Currently identical to 0.9.0. |
-| `lumen-0.9.0-dock.apk` | **2.9 MB, R8-minified.** Wallpaper-derived theming (the launcher recolours itself to your wallpaper, live), a five-slot dock above the page dots (pin apps from the drawer's long-press menu, long-press a dock icon to unpin), and the drawer no longer throws the keyboard over the App Library. Includes all of 0.8.x (tap-to-open with the Android 14+ launch fix, satellite bubble, artwork, EQ bars, live rim, restricted-settings guidance). |
+| `lumen-latest.apk` | Always the newest build. Currently identical to 0.9.1. |
+| `lumen-0.9.1-round.apk` | **2.9 MB, R8-minified.** One shape system: every container shares superellipse n=3.0 on a five-stop radius ladder, capsule forms keep circular ends, icon masks rounder to match. Plus 0.9.0's wallpaper-derived theming (live), the five-slot dock, and the quieter drawer. |
 | `lumen-0.1.1-phase1.apk` | Phase 1 only, no Capsule, unminified. The old fallback. |
 
-sha256 of `lumen-0.9.0-dock.apk` / `lumen-latest.apk`:
-`6caf0b7756d1f37ff10e76e3e3e1b2b25e2e79c63ff7850b308c87dabaa1227a`
+sha256 of `lumen-0.9.1-round.apk` / `lumen-latest.apk`:
+`2e302103ec1bd35a9209a8fec3bf7ba01f16539914e7dcc3157628a67375b0c5`
 
 Not screenshot-verified this round: the build emulator's system_server is in a terminal ANR storm
 (host fault, documented since 0.3.0). Compile-verified with 77 unit tests passing, including two

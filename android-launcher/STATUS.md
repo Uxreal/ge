@@ -3,7 +3,11 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.9.0 — "make it better", answered with the three biggest gaps (D38): the theme
+Last updated: 0.9.1 — one shape system (D39): flat-sided containers share superellipse n=3.0
+(down from the squarish 4.6 — a §3 deviation, user-directed) on a five-stop radius ladder
+(8/14/20/28/36dp); full capsules (pill, satellite, handles) keep n=2.15 circular ends; icon masks
+rise to 34%. Everything rounder, one corner language.
+Previously (0.9.0) — "make it better", answered with the three biggest gaps (D38): the theme
 now derives from the wallpaper (live, no restart), a five-slot dock rides above the page dots
 (pin from the drawer menu, long-press to unpin, prefs-backed so the layout engine is untouched),
 and the drawer stops throwing the keyboard over the App Library on open. Compile-verified, 77

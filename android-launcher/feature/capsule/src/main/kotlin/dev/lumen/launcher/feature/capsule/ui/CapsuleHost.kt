@@ -814,9 +814,9 @@ private val PILL_TEXT = Color(0xF5FFFFFF)
 private val PILL_TEXT_DIM = Color(0x9EFFFFFF)
 
 /**
- * The pill's own curvature, far rounder than the launcher's default n=4.6. A superellipse at 4.6
- * reads deliberately squarish — right for icons, wrong for a capsule whose ends wrap a circular
- * camera lens. 2.15 is a hair softer than a true stadium without ever reading as square.
+ * D39's second rule: flat-sided containers use the global n=3.0; full capsules — this pill, the
+ * satellite, anything whose radius is half its height — use 2.15, a hair softer than a true
+ * stadium, so their ends stay circular around circular things (the camera lens above all).
  */
 private const val PILL_SMOOTHNESS = 2.15f
 
@@ -839,7 +839,7 @@ private val MAX_HOLE = 44.dp
 
 private val FALLBACK_HEIGHT = 30.dp
 private val FALLBACK_GAP = 10.dp
-private val EXPANDED_CORNER = 24.dp
+private val EXPANDED_CORNER = 28.dp
 private val GLYPH_SIZE = 14.dp
 private val CHIP_GLYPH = 16.dp
 private val SATELLITE_GAP = 6.dp

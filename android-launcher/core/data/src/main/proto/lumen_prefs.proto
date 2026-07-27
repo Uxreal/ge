@@ -18,7 +18,7 @@ message LumenPrefs {
   float parallax = 10;          // wallpaper offset multiplier 0..1.5; negative sentinel unused, 0 valid -> has_parallax
   bool parallax_set = 11;       // distinguishes "user chose 0" from "unset -> default 1.0"
   bool onboarding_done = 12;
-  float smoothness = 13;        // superellipse n, 2.0..6.0; 0 -> 4.6
+  float smoothness = 13;        // superellipse n, 2.0..6.0; 0 -> 3.0 (D39)
   bool workspace_seeded = 14;
 
   // §4.1: every package that has pushed a Capsule card, and the ones the user has switched off.

@@ -64,9 +64,9 @@ data class PrefsSnapshot(
     val capsuleEnabled: Boolean,
     /** D30: false (default) hides the system bar on the home screen; Lumen draws time/battery. */
     val showStatusBar: Boolean,
-    /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
     /** D38: the dock, as AppKey.flat strings in order. */
     val dockKeys: List<String>,
+    /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
     val capsuleSeenPackages: List<String>,
     val capsuleBlockedPackages: List<String>,
 )
@@ -155,7 +155,7 @@ private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
     hideLabels = hideLabels,
     parallax = if (parallaxSet) parallax.coerceIn(0f, 1.5f) else 1f,
     onboardingDone = onboardingDone,
-    smoothness = if (smoothness in 2f..6f) smoothness else 4.6f,
+    smoothness = if (smoothness in 2f..6f) smoothness else 3.0f,
     workspaceSeeded = workspaceSeeded,
     capsuleEnabled = !capsuleOff,
     showStatusBar = showStatusBar,

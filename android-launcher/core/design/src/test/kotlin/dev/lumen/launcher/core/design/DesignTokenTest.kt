@@ -266,8 +266,8 @@ class DesignTokenTest {
 
     @Test
     fun `smoothness is clamped to the token range with 4 point 6 as the default`() {
-        assertEquals(4.6f, Superellipse.DEFAULT_SMOOTHNESS, 0.0001f)
-        assertEquals(4.6f, Superellipse.smoothnessOrDefault(null), 0.0001f)
+        assertEquals(3.0f, Superellipse.DEFAULT_SMOOTHNESS, 0.0001f)
+        assertEquals(3.0f, Superellipse.smoothnessOrDefault(null), 0.0001f)
         assertEquals(Superellipse.MIN_SMOOTHNESS, Superellipse.smoothnessOrDefault(0.5f), 0.0001f)
         assertEquals(Superellipse.MAX_SMOOTHNESS, Superellipse.smoothnessOrDefault(99f), 0.0001f)
         assertEquals(3.2f, Superellipse.smoothnessOrDefault(3.2f), 0.0001f)

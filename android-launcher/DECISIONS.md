@@ -541,3 +541,21 @@ app also remains on its page; the dock is a shortcut row, not a home.
 **The drawer keyboard.** Opening the drawer no longer auto-focuses search — the App Library is a
 browsing surface and the keyboard covered half of it on every open. Tap the field to type; Enter
 still launches the top hit.
+
+## D39 — One shape system (user-directed: "more rounded and refined, everything the same corner")
+
+**The system, two rules:**
+
+1. **Flat-sided containers share one curvature and one radius ladder.** The global superellipse
+   exponent drops from §3's 4.6 to **3.0** — 4.6 reads deliberately squarish, and at chip and
+   card radii it is exactly what made surfaces feel boxy; 3.0 keeps the curvature-continuous
+   corner blend that makes the shape a superellipse at all, but round. Every container sits on
+   one five-stop radius ladder (8 / 14 / 20 / 28 / 36dp) through `MaterialTheme.shapes`; the
+   expanded island sits on the 28 stop; icon masks rise from 28% to 34% of icon size to match.
+2. **Full capsules keep circular ends.** Anything whose radius is half its height — the pill,
+   the satellite, the page-indicator, handles — stays at n=2.15, because their job is to wrap
+   circular things (a camera lens above all) and flatter arcs read as squared ends there.
+
+**Deviation note:** §3 fixed the default smoothness at 4.6; §0.3 requires asking before deviating
+from a §3 token, and the user directed this one explicitly. The 2.0–6.0 slider is unchanged — a
+user who moved it keeps their value; only the unset default shifts.
