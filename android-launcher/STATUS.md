@@ -3,7 +3,13 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.8.0 — reference-parity round (D36): tap opens the app and long-press expands,
+Last updated: 0.8.1 — two silent walls found behind "most things dont work" (D37): the
+Android 14+ background-activity-launch block was eating every PendingIntent the island fired
+(tap-to-open, action chips — all silent no-ops), and Android 13+ restricted settings blocks the
+notification-access toggle for sideloaded apps, which is why media consent kept failing; Settings
+now walks through the unblock. Also fixed: drag-down accidentally launched the app instead of
+expanding (0.8.0 regression).
+Previously (0.8.0) — reference-parity round (D36): tap opens the app and long-press expands,
 a second activity detaches into a satellite bubble beside the pill, media shows album artwork
 with animated equaliser bars and 1Hz-extrapolated rim progress, and the expanded media card has
 the artwork/title/progress-line/transport layout. Compile-verified, 77 tests; the emulator

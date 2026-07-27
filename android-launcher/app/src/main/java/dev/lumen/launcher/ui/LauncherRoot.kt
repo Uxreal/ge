@@ -221,7 +221,7 @@ fun LauncherRoot(
                         deck = deck,
                         onPin = capsuleVm::pinFront,
                         onDismiss = capsuleVm::dismiss,
-                        onLaunch = { intent -> runCatching { intent.send() } },
+                        onLaunch = { intent -> sendPendingIntent(activity, intent) },
                         onGeometryResolved = capsuleVm::reportGeometry,
                         showStatusStrip = ownTop,
                         modifier = Modifier.fillMaxSize(),
@@ -305,6 +305,24 @@ fun LauncherRoot(
                 }
             }
         }
+    }
+}
+
+/**
+ * Fires another app's `PendingIntent` from the launcher. The options bundle is not optional
+ * decoration: since Android 14, an activity `PendingIntent` whose creator is backgrounded is
+ * silently dropped unless the foreground sender opts in to the background-activity start. Without
+ * this, every Capsule tap and action chip was a no-op on new devices — "nothing happens".
+ */
+private fun sendPendingIntent(activity: MainActivity, intent: android.app.PendingIntent) {
+    runCatching {
+        val options = android.app.ActivityOptions.makeBasic()
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            options.setPendingIntentBackgroundActivityStartMode(
+                android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+            )
+        }
+        intent.send(activity, 0, null, null, null, null, options.toBundle())
     }
 }
 

@@ -502,3 +502,22 @@ two conflict, recorded here per §0.3:
 
 **Naming honesty (§1.2) is unchanged**: the feature is the Capsule everywhere in code, docs and
 UI; "the reference" is a design target, not a name.
+
+## D37 — Two silent walls between the island and "working"
+
+**Found from the field report "most things dont work as they should":**
+
+* **Background-activity-launch blocking.** Since Android 14, when the launcher fires another
+  app's activity `PendingIntent`, the start is silently dropped unless the sender opts in via
+  `ActivityOptions.setPendingIntentBackgroundActivityStartMode`. Every Capsule tap-to-open and
+  every action chip was a no-op on the target device — no error, no toast, nothing. The opt-in
+  now rides every send. This is the correct scoping: the user just tapped the thing; the start is
+  as foreground as intent gets.
+* **Restricted settings.** Android 13+ marks sideloaded apps restricted, and the
+  notification-access toggle refuses silently until the user lifts the restriction from App info.
+  A dead toggle is indistinguishable from a Lumen bug, so Settings → Capsule now carries a row
+  that opens App info and spells out the three steps.
+
+**Also fixed:** the 0.8.0 tap-semantics change accidentally routed drag-down through the same
+callback as tap, so dragging the island down launched the app instead of expanding. Drag-down has
+its own callback again, and launching from an expanded card collapses the island behind it.

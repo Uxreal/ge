@@ -257,7 +257,16 @@ fun CapsuleHost(
                             // on long-press or a downward drag. Cards with nowhere to go expand.
                             haptics.state()
                             val destination = card.tapIntent
-                            if (destination != null) onLaunch(destination) else expanded = !expanded
+                            if (destination != null) {
+                                onLaunch(destination)
+                                expanded = false
+                            } else {
+                                expanded = !expanded
+                            }
+                        },
+                        onExpand = {
+                            haptics.state()
+                            expanded = true
                         },
                         onLongPress = {
                             haptics.lift()
@@ -739,6 +748,7 @@ private fun Modifier.capsuleGestures(
     onPressed: (Boolean) -> Unit,
     onOffset: (Offset) -> Unit,
     onTap: () -> Unit,
+    onExpand: () -> Unit,
     onLongPress: () -> Unit,
     onShuffle: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -781,7 +791,9 @@ private fun Modifier.capsuleGestures(
                     !horizontal && total.y < -dismissThreshold ->
                         if (deck.front?.dismissible == true) onDismiss()
 
-                    !horizontal && total.y > dismissThreshold && !expanded -> onTap()
+                    // Drag-down expands — it must never route through onTap, which now
+                    // opens the card's app (the 0.8.0 regression: dragging down launched it).
+                    !horizontal && total.y > dismissThreshold && !expanded -> onExpand()
                 }
                 total = Offset.Zero
                 onOffset(Offset.Zero)

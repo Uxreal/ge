@@ -305,6 +305,28 @@ fun SettingsScreen(
                         }
                     }
                 }
+                item {
+                    // Android 13+ marks sideloaded apps "restricted": the notification-access
+                    // toggle silently refuses until the user lifts the restriction from App info.
+                    // Without this row that dead toggle is indistinguishable from a Lumen bug.
+                    val context = LocalContext.current
+                    ActionRow(
+                        title = "Media toggle blocked or greyed out?",
+                        summary = "Sideloaded apps need one extra step on newer Android: this row " +
+                            "opens Lumen's App info. There, tap the three-dot menu (top right), " +
+                            "choose Allow restricted settings, then come back and grant media " +
+                            "playback above.",
+                    ) {
+                        runCatching {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.fromParts("package", context.packageName, null),
+                                ),
+                            )
+                        }
+                    }
+                }
                 // §4.1: any app can push a card without a permission, so the defence is a list the
                 // user can actually see. Packages appear here the first time they push.
                 if (prefs.capsuleSeenPackages.isEmpty()) {
