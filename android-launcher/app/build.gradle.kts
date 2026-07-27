@@ -8,16 +8,32 @@ android {
     namespace = "dev.lumen.launcher"
 
     defaultConfig {
-        applicationId = "dev.lumen.launcher"
-        versionCode = 13
-        versionName = "0.9.1-round"
+        // "launcher2": a fresh install identity (D40). The old dev.lumen.launcher on the phone is
+        // signed with a build key this machine no longer has, so updates to it can never install
+        // again; a new id side-steps the corpse. Uninstall the old Lumen after switching.
+        applicationId = "dev.lumen.launcher2"
+        versionCode = 14
+        versionName = "1.0.0-fresh"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    signingConfigs {
+        // A keystore that lives in the repo (D40): this is a personal, never-published build, and
+        // a committed key is what guarantees every future APK updates over the last one no matter
+        // which machine built it. The debug-keystore era caused exactly that failure.
+        create("lumen") {
+            storeFile = rootProject.file("signing/lumen-release.keystore")
+            storePassword = "lumen-personal"
+            keyAlias = "lumen"
+            keyPassword = "lumen-personal"
+        }
     }
 
     buildTypes {
         debug {
             // §5 requires zero main-thread icon decodes; the assertion is compiled into debug only.
             buildConfigField("boolean", "STRICT_MAIN_THREAD", "true")
+            signingConfig = signingConfigs.getByName("lumen")
         }
         release {
             // Back on after the 0.1.0 incident (AGP 8.9.2's R8 vs Kotlin 2.2 metadata — dead
@@ -27,8 +43,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideload distribution (DECISIONS D2): debug-signed until a release keystore exists.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sideload distribution (DECISIONS D2), now on the committed permanent key (D40).
+            signingConfig = signingConfigs.getByName("lumen")
             buildConfigField("boolean", "STRICT_MAIN_THREAD", "false")
         }
     }

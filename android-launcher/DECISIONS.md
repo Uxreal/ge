@@ -559,3 +559,22 @@ still launches the top hit.
 **Deviation note:** §3 fixed the default smoothness at 4.6; §0.3 requires asking before deviating
 from a §3 token, and the user directed this one explicitly. The 2.0–6.0 slider is unchanged — a
 user who moved it keeps their value; only the unset default shifts.
+
+## D40 — A fresh install identity and a permanent signing key
+
+**What broke:** every build so far was signed with the build machine's throwaway debug keystore.
+Cloud build machines get recycled; the key rotated; and Android — correctly — refuses to update
+an installed package with an APK from a different signer. "The apk will load" stopped being true
+through no fault of the APK's contents, and nothing can ever update the phone's existing
+`dev.lumen.launcher` again because the key that signed it is gone.
+
+**Chosen:** the application id becomes `dev.lumen.launcher2`, which installs cleanly beside the
+stranded package (uninstall the old Lumen after switching), and release + debug builds now sign
+with a keystore committed to the repo, so every future APK updates over the last one no matter
+which machine built it. A committed key with a plaintext password is an informed trade for a
+personal, never-published build (the user's stated intent) — it protects against exactly one
+threat, update breakage, and that is the threat we have.
+
+**Unchanged on purpose:** the code namespace stays `dev.lumen.launcher` (an applicationId is an
+install identity, not a package structure), and the §4.1 push actions remain
+`dev.lumen.launcher.capsule.PUSH`/`.CLEAR` — the public API and README examples still hold.

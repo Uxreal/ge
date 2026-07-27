@@ -3,7 +3,12 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.9.1 — one shape system (D39): flat-sided containers share superellipse n=3.0
+Last updated: 1.0.0 — fresh install identity (D40): the build key had rotated with the cloud
+container, so nothing could update the installed dev.lumen.launcher ever again; the app is now
+dev.lumen.launcher2 (installs beside the stranded one — uninstall the old Lumen) and every build
+signs with a keystore committed to the repo, ending the breakage class. Onboarding, default-home,
+media consent and the dock all start fresh: new id, new app data.
+Previously (0.9.1) — one shape system (D39): flat-sided containers share superellipse n=3.0
 (down from the squarish 4.6 — a §3 deviation, user-directed) on a five-stop radius ladder
 (8/14/20/28/36dp); full capsules (pill, satellite, handles) keep n=2.15 circular ends; icon masks
 rise to 34%. Everything rounder, one corner language.
