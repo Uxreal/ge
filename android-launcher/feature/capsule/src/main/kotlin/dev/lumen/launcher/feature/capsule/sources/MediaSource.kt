@@ -174,7 +174,8 @@ internal class MediaSource(
             androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context)
         if (!granted) {
             return "Off. Requires notification access, granted in system settings. Lumen reads " +
-                "no notifications, only media sessions."
+                "only which app posted a notification (for the dots) and media sessions — " +
+                "never notification content."
         }
         val sessions = runCatching { sessionManager?.getActiveSessions(listenerComponent) }
             .getOrNull()
@@ -194,11 +195,19 @@ internal class MediaSource(
 }
 
 /**
- * The consent token. `MediaSessionManager` will only answer on behalf of an enabled notification
- * listener, so this service exists to *be* that listener — it reads nothing and stores nothing,
- * which is exactly what the system's "allow notification access" screen is consenting to here.
+ * The consent token, and since D43 the dot counter. `MediaSessionManager` will only answer on
+ * behalf of an enabled notification listener, so this service exists to *be* that listener. What
+ * it reads from notifications is exactly one field — which package posted — to light the dots on
+ * icons; titles, text and extras are never touched and nothing reaches disk. Disabled, media and
+ * dots both fall away and the launcher works fully without them (§10).
  */
 class CapsuleNotificationListener : NotificationListenerService() {
+
+    @dagger.hilt.EntryPoint
+    @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+    interface DotsEntryPoint {
+        fun notificationDots(): dev.lumen.launcher.core.data.notifications.NotificationDotsRepository
+    }
 
     override fun onListenerConnected() {
         // The user just flipped the toggle in system settings; media can start flowing now.
@@ -207,6 +216,41 @@ class CapsuleNotificationListener : NotificationListenerService() {
                 .fromApplication(applicationContext, CapsulePushReceiver.ControllerEntryPoint::class.java)
                 .capsuleController()
                 .refreshMedia()
+        }
+        publishDots()
+    }
+
+    override fun onListenerDisconnected() {
+        publish(emptySet())
+    }
+
+    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) =
+        publishDots()
+
+    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) =
+        publishDots()
+
+    /**
+     * Recomputed from [getActiveNotifications] every time rather than kept as deltas: the system's
+     * list is authoritative, delta bookkeeping drifts on missed callbacks, and the call is cheap
+     * at notification cadence.
+     */
+    private fun publishDots() {
+        val active = runCatching {
+            activeNotifications.orEmpty().map { it.packageName to it.isOngoing }
+        }.getOrDefault(emptyList())
+        publish(
+            dev.lumen.launcher.core.data.notifications.NotificationDotsRepository
+                .dotWorthy(active),
+        )
+    }
+
+    private fun publish(packages: Set<String>) {
+        runCatching {
+            EntryPointAccessors
+                .fromApplication(applicationContext, DotsEntryPoint::class.java)
+                .notificationDots()
+                .update(packages)
         }
     }
 }

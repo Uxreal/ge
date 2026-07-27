@@ -82,8 +82,12 @@ class DrawerViewModel @Inject constructor(
     private val appRepo: AppRepository,
     private val usage: UsageRepository,
     private val prefsRepo: dev.lumen.launcher.core.data.prefs.PrefsRepository,
+    notificationDots: dev.lumen.launcher.core.data.notifications.NotificationDotsRepository,
     val iconCache: IconCache,
 ) : ViewModel() {
+
+    /** D43: packages whose icons carry a dot right now. */
+    val dots: kotlinx.coroutines.flow.StateFlow<Set<String>> = notificationDots.packages
 
     /** D38: pin an app to the dock (max five; the oldest rolls off). */
     fun addToDock(key: AppKey) = prefsRepo.addDockKey(key.flat)
@@ -581,12 +585,15 @@ private fun DrawerAppIcon(
     onMenu: (AppInfo, Rect?) -> Unit,
 ) {
     val icon = rememberDrawerIcon(vm.iconCache, app.key, 56.dp)
+    val prefs by vm.prefsFlow.collectAsStateWithLifecycle()
+    val dots by vm.dots.collectAsStateWithLifecycle()
     AppIcon(
         icon = icon,
         label = app.label,
         iconSize = 56.dp,
         labelLines = 1,
         labelColor = MaterialTheme.colorScheme.onSurface,
+        showDot = prefs.notificationDots && app.key.packageName in dots,
         accessibilityActions = buildList {
             add(
                 androidx.compose.ui.semantics.CustomAccessibilityAction("Add to Home") {

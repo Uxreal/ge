@@ -32,6 +32,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.core.content.ContextCompat
 import dev.lumen.launcher.core.design.theme.LocalTypography
 import dev.lumen.launcher.feature.capsule.BuiltinSymbol
@@ -104,11 +110,47 @@ internal fun StatusStrip(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(text = time, style = style)
+        // D43: the strip is Lumen's status bar, so its regions answer like one — the time opens
+        // the clock, the battery opens the battery screen. Both fail silently on odd OEM builds;
+        // a status readout must never throw.
+        BasicText(
+            text = time,
+            style = style,
+            modifier = Modifier
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Open clock"
+                }
+                .pointerInput(context) {
+                    detectTapGestures {
+                        runCatching {
+                            context.startActivity(
+                                Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }
+                },
+        )
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Open battery settings"
+                }
+                .pointerInput(context) {
+                    detectTapGestures {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_POWER_USAGE_SUMMARY)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }
+                },
         ) {
             if (percent >= 0) {
                 BasicText(text = "$percent%", style = style)

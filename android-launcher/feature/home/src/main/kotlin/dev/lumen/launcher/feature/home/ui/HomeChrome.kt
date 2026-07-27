@@ -14,9 +14,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
@@ -24,6 +26,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lumen.launcher.core.design.interaction.LocalHaptics
 import dev.lumen.launcher.core.design.interaction.launcherPressable
 import dev.lumen.launcher.core.design.motion.LocalMotion
@@ -209,7 +212,9 @@ internal fun DockBar(
     /** The always-tappable way into the drawer — swipes are a bonus, not the door (D41). */
     onOpenDrawer: (() -> Unit)? = null,
 ) {
-    val haptics = dev.lumen.launcher.core.design.interaction.LocalHaptics.current
+    val haptics = LocalHaptics.current
+    val prefs by vm.prefs.collectAsStateWithLifecycle()
+    val dots by vm.dots.collectAsStateWithLifecycle()
     Row(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -227,6 +232,7 @@ internal fun DockBar(
                 label = app.label,
                 iconSize = DOCK_ICON,
                 showLabel = false,
+                showDot = prefs.notificationDots && app.key.packageName in dots,
                 onClick = { bounds -> vm.launch(app.key, bounds) },
                 onLongPress = {
                     haptics.commit()
@@ -236,15 +242,30 @@ internal fun DockBar(
         }
         if (onOpenDrawer != null) {
             val dotTint = MaterialTheme.colorScheme.onSurfaceVariant
+            var pressed by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
+            val pressScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (pressed) 0.92f else 1f,
+                animationSpec = LocalMotion.current.micro(),
+                label = "appsPress",
+            )
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(DOCK_ICON)
+                    .scale(pressScale)
                     .background(
                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                         MaterialTheme.shapes.medium,
                     )
-                    .pointerInput(Unit) { detectTapGestures(onTap = { onOpenDrawer() }) }
+                    .launcherPressable(
+                        onPressChange = { pressed = it },
+                        onClick = {
+                            haptics.state()
+                            onOpenDrawer()
+                        },
+                    )
                     .semantics {
                         contentDescription = "All apps"
                         role = Role.Button

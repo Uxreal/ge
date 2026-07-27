@@ -3,7 +3,15 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 1.1.1 — the on-screen fix (D42): "the home screen apps are not on the screen"
+Last updated: 1.2.0 — the polish round (D43), for "better, make it perfect": swipe down
+anywhere on home now opens the notification shade (the missing everyday gesture, doubly needed
+with the status bar hidden), notification dots light the corner of icons on the grid, dock,
+folders and drawer (same consent as media; Lumen reads only which app posted, never content;
+ongoing notifications never dot; toggle in Settings → Home), the status strip answers like a
+status bar (tap time → clock, tap battery → battery screen), the dock's Apps button presses like
+everything else, and the page dots vanish when there is only one page. Four new unit tests for
+the dot policy (84 total).
+Previously (1.1.1) — the on-screen fix (D42): "the home screen apps are not on the screen"
 was factory seeding placing clock/settings with the default 4×5 grid before the real (shorter)
 grid had been measured — FREEFORM then faithfully never moved them back into view. Seeding now
 waits for the measured grid, a reclaim pass moves any item stranded outside the live bounds to

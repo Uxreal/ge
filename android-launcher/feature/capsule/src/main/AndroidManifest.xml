@@ -19,8 +19,9 @@
 
         <!--
             §4's media source needs a notification listener as its consent token: the system only
-            reveals MediaSessions to a listener the user enabled by hand. The service reads no
-            notifications; disabled it costs nothing and the launcher works fully without it (§10).
+            reveals MediaSessions to a listener the user enabled by hand. Since D43 the listener
+            also reads exactly one notification field - the posting package - to light icon dots;
+            content never. Disabled it costs nothing and the launcher works fully without it (§10).
         -->
         <service
             android:name=".sources.CapsuleNotificationListener"

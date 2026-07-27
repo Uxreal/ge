@@ -629,3 +629,33 @@ never move what is placed — faithfully kept them stranded forever.
 **Rejected:** clamping stray cells into bounds in the repository on load (hides the bug class and
 can silently stack items); making seeding retry on a timer (a gate is deterministic, a timer is a
 race with extra steps).
+
+## D43 — The polish round: shade swipe, notification dots, a status bar that answers
+
+**Context:** "better, make it perfect." Audited the launcher as a daily driver and fixed the
+gaps a person hits in the first hour, not the tenth.
+
+**Chosen:**
+1. *Swipe down opens the notification shade.* The gesture every launcher ships, and doubly
+   needed here because Lumen hides the status bar (D30) — notifications were otherwise a careful
+   swipe from the very top edge. Same flick physics as the drawer swipe, mirrored. No public API
+   exists; `StatusBarManager#expandNotificationsPanel` via reflection is the decade-old launcher
+   route (with the normal-level `EXPAND_STATUS_BAR` permission), fully guarded — if an OS update
+   closes it, the swipe quietly returns to doing nothing.
+2. *Notification dots.* A wallpaper-accent dot over a soft dark halo on the icon's top-right
+   corner — home grid, dock, folders (lit when any child is), and the drawer. Powered by the
+   same notification listener that is media's consent token: the listener now reads exactly one
+   field, the posting package, never content. Ongoing notifications (playback, navigation,
+   "running" banners) never earn a dot — a dot you cannot clear reads as broken. Off switch in
+   Settings → Home; every consent string updated to say precisely what is read. In-memory only.
+3. *The status strip answers like a status bar.* Tap the time → clock; tap the battery → the
+   system battery screen. Silent on OEM builds that lack either screen.
+4. *Chrome behaves.* The dock's Apps button gets press-scale and a haptic like everything else
+   tappable; the page-dot strip disappears when there is only one page (a lone dot is chrome
+   with nothing to say — the space stays reserved so nothing shifts).
+
+**Rejected:** polling `activeNotifications` on a timer (the listener's callbacks are the truth,
+recomputed from the authoritative list on each event); badge counts on the dot (numbers turn a
+glance into a todo list; iOS-style dots are calmer and honest about what Lumen reads); an
+accessibility service for the shade (heavyweight, and its consent screen implies far more access
+than a shade swipe warrants).

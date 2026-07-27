@@ -35,6 +35,7 @@ class HomeViewModel @Inject constructor(
     private val prefsRepo: PrefsRepository,
     private val appRepo: AppRepository,
     private val usage: UsageRepository,
+    notificationDots: dev.lumen.launcher.core.data.notifications.NotificationDotsRepository,
     val iconCache: IconCache,
     val wallpaper: WallpaperCoordinator,
 ) : ViewModel() {
@@ -42,6 +43,9 @@ class HomeViewModel @Inject constructor(
     val state: StateFlow<WorkspaceState> = workspace.state
     val prefs: StateFlow<PrefsSnapshot> = prefsRepo.prefs
     val apps: StateFlow<List<AppInfo>> = appRepo.apps
+
+    /** D43: packages whose icons carry a dot right now. Empty when access or the toggle is off. */
+    val dots: StateFlow<Set<String>> = notificationDots.packages
 
     /** The dock (D38): stored keys resolved against installed apps; uninstalled entries drop out. */
     fun dockApps(): List<AppInfo> {

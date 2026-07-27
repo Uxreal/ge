@@ -78,6 +78,7 @@ class SettingsViewModel @Inject constructor(
     fun setSmoothness(n: Float) = prefsRepo.setSmoothness(n)
     fun setCapsuleEnabled(enabled: Boolean) = prefsRepo.setCapsuleEnabled(enabled)
     fun setShowStatusBar(show: Boolean) = prefsRepo.setShowStatusBar(show)
+    fun setNotificationDots(enabled: Boolean) = prefsRepo.setNotificationDots(enabled)
     fun blockCapsulePackage(pkg: String) = prefsRepo.blockCapsulePackage(pkg)
     fun unblockCapsulePackage(pkg: String) = prefsRepo.unblockCapsulePackage(pkg)
 }
@@ -191,6 +192,15 @@ fun SettingsScreen(
                         onSelect = { vm.setLabelLines(it + 1) },
                     )
                 }
+                item {
+                    SwitchRow(
+                        "Notification dots",
+                        "A dot on an app's icon while it has notifications. Uses the same " +
+                            "notification access as Capsule media; Lumen reads only which app " +
+                            "posted, never the content.",
+                        prefs.notificationDots,
+                    ) { vm.setNotificationDots(it) }
+                }
 
                 item { SectionTitle("Look") }
                 item {
@@ -274,8 +284,8 @@ fun SettingsScreen(
                     SwitchRow(
                         "Show the system status bar",
                         "Off by default: Lumen hides it on the home screen and draws time and " +
-                            "battery in its own style beside the Capsule. Swipe down from the " +
-                            "top edge to reach the shade either way.",
+                            "battery in its own style beside the Capsule. Swipe down anywhere " +
+                            "on the home screen to open the notification shade either way.",
                         prefs.showStatusBar,
                     ) { vm.setShowStatusBar(it) }
                 }
@@ -388,7 +398,8 @@ private fun mediaSummaryOf(context: Context, live: (() -> String)?): String =
         "On. Now playing appears as a card with play, pause and next."
     } else {
         "Off. Requires notification access, which Android grants in system settings. Lumen " +
-            "reads no notifications, only media sessions."
+            "reads only which app posted a notification (for the dots) and media sessions — " +
+            "never notification content."
     }
 
 @Composable

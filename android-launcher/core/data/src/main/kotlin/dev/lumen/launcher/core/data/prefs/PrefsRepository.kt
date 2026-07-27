@@ -69,6 +69,8 @@ data class PrefsSnapshot(
     /** D41: apps hidden from every drawer view, revealed only behind the biometric shelf. */
     val hiddenKeys: List<String>,
     val dockSeeded: Boolean,
+    /** D43: a themed dot on an icon while its app has notifications. Same consent as media. */
+    val notificationDots: Boolean,
     /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
     val capsuleSeenPackages: List<String>,
     val capsuleBlockedPackages: List<String>,
@@ -139,6 +141,8 @@ class PrefsRepository @Inject constructor(
 
     fun setDockSeeded() = update { it.dockSeeded = true }
 
+    fun setNotificationDots(enabled: Boolean) = update { it.notificationDotsOff = !enabled }
+
     /** Capped so a package that renames itself in a loop cannot grow the prefs file without end. */
     fun rememberCapsulePackage(pkg: String) = update { builder ->
         if (pkg in builder.capsuleSeenPackagesList) return@update
@@ -179,6 +183,7 @@ private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
     dockKeys = dockKeysList,
     hiddenKeys = hiddenKeysList,
     dockSeeded = dockSeeded,
+    notificationDots = !notificationDotsOff,
     capsuleSeenPackages = capsuleSeenPackagesList,
     capsuleBlockedPackages = capsuleBlockedPackagesList,
 )

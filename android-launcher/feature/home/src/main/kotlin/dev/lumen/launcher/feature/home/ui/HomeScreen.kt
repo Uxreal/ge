@@ -77,6 +77,7 @@ fun HomeScreen(
     val haptics = LocalHaptics.current
     val typography = LocalTypography.current
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val insets = WindowInsets.safeDrawing.asPaddingValues()
@@ -172,7 +173,11 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .emptySpaceGestures(homeState, haptics)
-                    .drawerSwipe(homeState, onOpenDrawer),
+                    .verticalSwipes(
+                        homeState = homeState,
+                        onOpenDrawer = onOpenDrawer,
+                        onOpenShade = { expandNotificationShade(context) },
+                    ),
             ) { page ->
                 PageGrid(
                     vm = vm,
@@ -210,12 +215,16 @@ fun HomeScreen(
             )
         }
 
-        PageIndicator(
-            pagerState = pagerState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = -insets.calculateBottomPadding()),
-        )
+        // One page needs no map (D43): the lone dot was chrome with nothing to say. The strip's
+        // space stays reserved so nothing shifts when a second page appears.
+        if (pagerState.pageCount > 1) {
+            PageIndicator(
+                pagerState = pagerState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = -insets.calculateBottomPadding()),
+            )
+        }
 
         if ((dock.isNotEmpty() || onOpenDrawer != null) && drag == null) {
             DockBar(
@@ -294,17 +303,23 @@ private fun Modifier.pageDepth(pagerState: PagerState, page: Int, reduceMotion: 
 }
 
 /**
- * FREEFORM's drawer gesture: an upward swipe anywhere on the home surface (like the Pixel
- * launcher). Horizontal motion belongs to the pager and item drags consume their own events first,
- * so this only sees what nothing else wanted.
+ * The home surface's vertical gestures: swipe up opens the drawer (FREEFORM, like the Pixel
+ * launcher), swipe down opens the notification shade (D43 — every launcher's gesture, and the
+ * main door to notifications while Lumen hides the status bar). Horizontal motion belongs to the
+ * pager and item drags consume their own events first, so this only sees what nothing else wanted.
  *
  * Distance alone was the wrong test: a fast flick covers less ground before the finger leaves the
  * glass than a slow drag does, so the quick, confident swipe — the one people actually make — was
- * the one that failed. A short throw counts when it is fast enough.
+ * the one that failed. A short throw counts when it is fast enough. Both directions get the same
+ * physics.
  */
-private fun Modifier.drawerSwipe(homeState: HomeState, onOpenDrawer: (() -> Unit)?): Modifier {
-    if (onOpenDrawer == null) return this
-    return pointerInput(homeState, onOpenDrawer) {
+private fun Modifier.verticalSwipes(
+    homeState: HomeState,
+    onOpenDrawer: (() -> Unit)?,
+    onOpenShade: (() -> Unit)?,
+): Modifier {
+    if (onOpenDrawer == null && onOpenShade == null) return this
+    return pointerInput(homeState, onOpenDrawer, onOpenShade) {
         val slowThreshold = 72.dp.toPx()
         val flickThreshold = 24.dp.toPx()
         var total = 0f
@@ -323,12 +338,20 @@ private fun Modifier.drawerSwipe(homeState: HomeState, onOpenDrawer: (() -> Unit
                 if (fired || homeState.drag != null || homeState.editMode) return@detectVerticalDragGestures
 
                 val elapsed = (change.uptimeMillis - startedAt).coerceAtLeast(1L)
-                val upwardSpeed = -total / elapsed * 1000f // px per second
-                val flicked = total < -flickThreshold && upwardSpeed > FLICK_SPEED_PX_S
-                if (total < -slowThreshold || flicked) {
-                    fired = true
-                    change.consume()
-                    onOpenDrawer()
+                val speed = total / elapsed * 1000f // px per second, signed; up is negative
+                val upFlick = total < -flickThreshold && -speed > FLICK_SPEED_PX_S
+                val downFlick = total > flickThreshold && speed > FLICK_SPEED_PX_S
+                when {
+                    onOpenDrawer != null && (total < -slowThreshold || upFlick) -> {
+                        fired = true
+                        change.consume()
+                        onOpenDrawer()
+                    }
+                    onOpenShade != null && (total > slowThreshold || downFlick) -> {
+                        fired = true
+                        change.consume()
+                        onOpenShade()
+                    }
                 }
             },
         )

@@ -49,6 +49,7 @@ import dev.lumen.launcher.core.data.model.WidgetItem
 import dev.lumen.launcher.core.design.icon.AppIcon
 import dev.lumen.launcher.core.design.icon.LetterTile
 import dev.lumen.launcher.core.design.icon.MaskedIcon
+import dev.lumen.launcher.core.design.icon.drawNotificationDot
 import dev.lumen.launcher.core.design.interaction.LocalHaptics
 import dev.lumen.launcher.core.design.motion.LocalMotion
 import dev.lumen.launcher.core.design.shape.Superellipse
@@ -132,6 +133,7 @@ private fun GridCellItem(
     metrics: GridMetrics,
 ) {
     val prefs by vm.prefs.collectAsStateWithLifecycle()
+    val dots by vm.dots.collectAsStateWithLifecycle()
     val wigglePhase = rememberWigglePhase(homeState.editMode)
     val session = homeState.drag
     val isCombineTarget = session?.combineTargetId == item.id
@@ -163,6 +165,7 @@ private fun GridCellItem(
                     wiggle = homeState.editMode,
                     wigglePhase = wigglePhase,
                     interactive = false,
+                    showDot = prefs.notificationDots && item.key.packageName in dots,
                     accessibilityActions = appAccessibilityActions(vm, homeState, item, page),
                     onClick = { vm.launch(item.key, it) },
                     modifier = Modifier
@@ -193,6 +196,8 @@ private fun GridCellItem(
                     showLabel = !prefs.hideLabels,
                     wiggle = homeState.editMode,
                     wigglePhase = wigglePhase,
+                    showDot = prefs.notificationDots &&
+                        item.items.any { it.key.packageName in dots },
                     modifier = Modifier
                         .tapSource { homeState.openFolderId = item.id }
                         .dragSource(vm, homeState, item, page, metrics),
@@ -377,9 +382,12 @@ internal fun FolderIcon(
     modifier: Modifier = Modifier,
     wiggle: Boolean = false,
     wigglePhase: Float = 0f,
+    /** D43: lit when any app inside carries a dot — the folder promises what it contains. */
+    showDot: Boolean = false,
 ) {
     val prefs by vm.prefs.collectAsStateWithLifecycle()
     val container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    val dotColor = MaterialTheme.colorScheme.primary
     val typography = LocalTypography.current
 
     androidx.compose.foundation.layout.Column(
@@ -397,7 +405,10 @@ internal fun FolderIcon(
                         radius = size.minDimension * dev.lumen.launcher.core.design.icon.DEFAULT_MASK_PERCENT,
                         smoothness = prefs.smoothness,
                     )
-                    onDrawBehind { drawPath(path, container) }
+                    onDrawBehind {
+                        drawPath(path, container)
+                        if (showDot) drawNotificationDot(dotColor)
+                    }
                 },
             contentAlignment = Alignment.Center,
         ) {

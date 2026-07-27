@@ -81,6 +81,8 @@ fun AppIcon(
     interactive: Boolean = true,
     /** §9: non-drag equivalents (move/remove/app info) surfaced to TalkBack and Switch Access. */
     accessibilityActions: List<CustomAccessibilityAction> = emptyList(),
+    /** D43: a small themed dot at the icon's top-right corner while the app has notifications. */
+    showDot: Boolean = false,
     externallyPressed: Boolean = false,
     onClick: (Rect) -> Unit,
     onLongPress: ((Rect) -> Unit)? = null,
@@ -99,6 +101,14 @@ fun AppIcon(
         label = "iconPress",
     )
 
+    // D43: the dot pops in and out with the micro token instead of blinking.
+    val dotScale by animateFloatAsState(
+        targetValue = if (showDot) 1f else 0f,
+        animationSpec = motion.micro(),
+        label = "dotScale",
+    )
+    val dotColor = MaterialTheme.colorScheme.primary
+
     // §5: ±1.5° at ~0.9Hz, each icon phase-offset by its identity — uniform phase looks wrong.
     val wiggleAngle = if (wiggle) {
         val offset = (label.hashCode() and 0xFF) / 255f
@@ -112,7 +122,7 @@ fun AppIcon(
             // §9: one merged node per icon, so TalkBack reads it once as a button, and both actions
             // have non-drag equivalents.
             .semantics(mergeDescendants = true) {
-                contentDescription = label
+                contentDescription = if (showDot) "$label, new notifications" else label
                 role = Role.Button
                 onClick(label = "Open $label") {
                     onClick(bounds)
@@ -165,18 +175,23 @@ fun AppIcon(
                         smoothness = smoothness,
                     )
                     onDrawBehind {
-                        val image = icon ?: return@onDrawBehind
-                        clipPath(mask) {
-                            drawImage(
-                                image = image,
-                                srcOffset = IntOffset.Zero,
-                                srcSize = IntSize(image.width, image.height),
-                                dstOffset = IntOffset.Zero,
-                                dstSize = IntSize(
-                                    geometry.width.roundToInt().coerceAtLeast(1),
-                                    geometry.height.roundToInt().coerceAtLeast(1),
-                                ),
-                            )
+                        val image = icon
+                        if (image != null) {
+                            clipPath(mask) {
+                                drawImage(
+                                    image = image,
+                                    srcOffset = IntOffset.Zero,
+                                    srcSize = IntSize(image.width, image.height),
+                                    dstOffset = IntOffset.Zero,
+                                    dstSize = IntSize(
+                                        geometry.width.roundToInt().coerceAtLeast(1),
+                                        geometry.height.roundToInt().coerceAtLeast(1),
+                                    ),
+                                )
+                            }
+                        }
+                        if (dotScale > 0.01f) {
+                            drawNotificationDot(dotColor, dotScale)
                         }
                     }
                 },
@@ -284,6 +299,37 @@ fun LetterTile(
         )
     }
 }
+
+/**
+ * D43's dot: wallpaper-accent fill over a dark halo, riding the icon's top-right corner. The halo
+ * is what keeps it legible when the corner underneath happens to be the same hue as the accent —
+ * the same trick the label scrim plays, at dot scale. Sized off the icon so every surface (grid,
+ * dock, folder, drawer) gets the same proportion without coordinating.
+ */
+fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNotificationDot(
+    color: Color,
+    scale: Float = 1f,
+) {
+    val center = androidx.compose.ui.geometry.Offset(
+        size.minDimension * DOT_CENTER_X,
+        size.minDimension * DOT_CENTER_Y,
+    )
+    drawCircle(
+        color = Color.Black.copy(alpha = 0.38f),
+        radius = size.minDimension * (DOT_RADIUS + DOT_HALO) * scale,
+        center = center,
+    )
+    drawCircle(
+        color = color,
+        radius = size.minDimension * DOT_RADIUS * scale,
+        center = center,
+    )
+}
+
+private const val DOT_CENTER_X = 0.85f
+private const val DOT_CENTER_Y = 0.15f
+private const val DOT_RADIUS = 0.10f
+private const val DOT_HALO = 0.028f
 
 const val DEFAULT_MASK_PERCENT = 0.34f
 private const val PRESS_SCALE = 1.08f
