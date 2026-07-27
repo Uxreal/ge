@@ -140,6 +140,19 @@ internal fun DrawScope.drawBuiltinSymbol(symbol: BuiltinSymbol, color: Color, bo
             }
         }
 
+        BuiltinSymbol.PREV -> {
+            val s = boxSize * 0.26f
+            listOf(0.22f, -0.24f).forEach { shift ->
+                val triangle = Path().apply {
+                    moveTo(center.x + boxSize * shift + s * 0.6f, center.y - s)
+                    lineTo(center.x + boxSize * shift - s * 0.8f, center.y)
+                    lineTo(center.x + boxSize * shift + s * 0.6f, center.y + s)
+                    close()
+                }
+                drawPath(triangle, color)
+            }
+        }
+
         BuiltinSymbol.SPARK -> {
             // A four-point star with concave sides — the mark for "something pushed this".
             val outer = r * 0.92f

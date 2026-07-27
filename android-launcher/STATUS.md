@@ -3,7 +3,12 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.7.0 — hardware round 4 ("still very large... make it feel like a modern os").
+Last updated: 0.8.0 — reference-parity round (D36): tap opens the app and long-press expands,
+a second activity detaches into a satellite bubble beside the pill, media shows album artwork
+with animated equaliser bars and 1Hz-extrapolated rim progress, and the expanded media card has
+the artwork/title/progress-line/transport layout. Compile-verified, 77 tests; the emulator
+remains dead, so first look is on the Flip.
+Previously (0.7.0): hardware round 4 ("still very large... make it feel like a modern os").
 The pill now caps the assumed lens size at 22dp for round holes (OEMs pad the reported rect;
 D34) with tighter 3dp margins, the expanded island dims the screen behind it and collapses on an
 outside tap, and the drawer's long-press menu anchors to the pressed icon and springs from it

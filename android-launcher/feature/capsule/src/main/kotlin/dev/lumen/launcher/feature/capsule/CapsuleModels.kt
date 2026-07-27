@@ -49,7 +49,7 @@ sealed interface CapsuleGlyph {
     data class Image(val uri: String) : CapsuleGlyph
 }
 
-enum class BuiltinSymbol { CLOCK, BATTERY, CHARGING, ALARM, SPARK, NOTE, PLAY, PAUSE, NEXT }
+enum class BuiltinSymbol { CLOCK, BATTERY, CHARGING, ALARM, SPARK, NOTE, PLAY, PAUSE, NEXT, PREV }
 
 @Immutable
 data class CapsuleAction(
@@ -97,6 +97,18 @@ data class CapsuleCard(
      * an unauthenticated broadcast carries a trustworthy identity.
      */
     val verified: Boolean = false,
+    /**
+     * Media extras. Artwork is an already-decoded in-memory bitmap from `MediaMetadata` (never a
+     * disk decode — §5). Position/duration let the UI extrapolate playback progress locally
+     * instead of the source re-pushing every second; [mediaPositionAtMs] is the epoch instant
+     * [mediaPositionMs] was sampled. Deliberately NOT [progress]: a progress-carrying card is
+     * subject to §4's 30-second abandoned-progress expiry, and songs are longer than that.
+     */
+    val artwork: androidx.compose.ui.graphics.ImageBitmap? = null,
+    val mediaPlaying: Boolean = false,
+    val mediaDurationMs: Long = 0L,
+    val mediaPositionMs: Long = 0L,
+    val mediaPositionAtMs: Long = 0L,
     val firstSeenAt: Long = 0L,
     val updatedAt: Long = 0L,
 ) {

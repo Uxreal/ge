@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -108,9 +110,9 @@ fun CapsuleHost(
     val front = deck.front
 
     var expanded by remember { mutableStateOf(false) }
-    var showActions by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var pressed by remember { mutableStateOf(false) }
+    var pillSizePx by remember { mutableStateOf(IntSize.Zero) }
 
     // §4: a source arriving at ≥800 expands itself once, for 2.5s, then settles back to GLANCE.
     LaunchedEffect(deck.signature, deck.autoExpand) {
@@ -119,12 +121,10 @@ fun CapsuleHost(
             expanded = true
             delay(AUTO_COLLAPSE_MS)
             expanded = false
-            showActions = false
         }
     }
     if (deck.cards.isEmpty() && expanded) {
         expanded = false
-        showActions = false
     }
 
     // Where the pill docks. Resolved after attach through the pure, tested policy in
@@ -198,10 +198,7 @@ fun CapsuleHost(
                     .fillMaxSize()
                     .background(SCRIM)
                     .pointerInput(Unit) {
-                        detectTapGestures {
-                            expanded = false
-                            showActions = false
-                        }
+                        detectTapGestures { expanded = false }
                     },
             )
         }
@@ -239,15 +236,9 @@ fun CapsuleHost(
                     scaleY = pressScale
                 },
         ) {
-            // Deck depth: slivers of the cards behind, peeking from under the pill's bottom edge.
-            deck.cards.drop(1).take(MAX_SHOULDERS).forEachIndexed { index, _ ->
-                Shoulder(depth = index + 1)
-            }
-
             CapsulePill(
                 card = card,
                 expanded = expanded,
-                showActions = showActions,
                 deckSize = deck.cards.size,
                 pillHeight = pillHeight,
                 gap = gap,
@@ -255,20 +246,22 @@ fun CapsuleHost(
                 embraced = resolved.embraced,
                 onLaunch = onLaunch,
                 modifier = Modifier
+                    .onSizeChanged { pillSizePx = it }
                     .capsuleGestures(
                         deck = deck,
                         expanded = expanded,
                         onPressed = { pressed = it },
                         onOffset = { dragOffset = it },
                         onTap = {
+                            // The reference grammar: tap goes to the app; the island itself opens
+                            // on long-press or a downward drag. Cards with nowhere to go expand.
                             haptics.state()
-                            expanded = !expanded
-                            if (!expanded) showActions = false
+                            val destination = card.tapIntent
+                            if (destination != null) onLaunch(destination) else expanded = !expanded
                         },
                         onLongPress = {
                             haptics.lift()
                             expanded = true
-                            showActions = true
                         },
                         onShuffle = { key ->
                             haptics.state()
@@ -281,7 +274,78 @@ fun CapsuleHost(
                     ),
             )
         }
+
+        // §4's STACKED, drawn the way the reference does it: a second activity detaches into a
+        // satellite bubble beside the pill rather than a sliver behind it. Tap swaps it to front.
+        val second = deck.cards.getOrNull(1)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = second != null && !expanded && deck.state != CapsuleState.DORMANT,
+            enter = fadeIn(motion.crossfade()),
+            exit = fadeOut(motion.crossfade()),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            val bubbleCard = second ?: return@AnimatedVisibility
+            SatelliteBubble(
+                card = bubbleCard,
+                diameter = pillHeight,
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            xOffsetPx + pillSizePx.width / 2 +
+                                SATELLITE_GAP.roundToPx() + with(density) { pillHeight.roundToPx() } / 2,
+                            topOffsetPx,
+                        )
+                    },
+                onTap = {
+                    haptics.state()
+                    onPin(bubbleCard.dedupeKey)
+                },
+            )
+        }
     }
+    }
+}
+
+/** The detached second-activity bubble: same black, same curvature, one glyph. */
+@Composable
+private fun SatelliteBubble(
+    card: CapsuleCard,
+    diameter: Dp,
+    modifier: Modifier = Modifier,
+    onTap: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val accent = remember(colors.primary, card.accentArgb) {
+        val themed = if (card.accentArgb != 0) {
+            lerp(colors.primary, Color(card.accentArgb), 0.55f)
+        } else {
+            colors.primary
+        }
+        if (themed.luminance() < 0.30f) lerp(themed, Color.White, 0.45f) else themed
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(diameter)
+            .drawWithCache {
+                val path = Superellipse.path(size, size.minDimension / 2f, PILL_SMOOTHNESS)
+                onDrawBehind { drawPath(path, PILL_FILL) }
+            }
+            .pointerInput(card.dedupeKey) { detectTapGestures(onTap = { onTap() }) }
+            .semantics { contentDescription = "Also active: " + card.title },
+    ) {
+        if (card.artwork != null) {
+            androidx.compose.foundation.Image(
+                bitmap = card.artwork,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .size(diameter - 6.dp)
+                    .clip(Superellipse.percentShape(50f, PILL_SMOOTHNESS)),
+            )
+        } else {
+            Glyph(glyph = card.glyph, tint = accent, boxSize = diameter * 0.5f)
+        }
     }
 }
 
@@ -294,7 +358,6 @@ fun CapsuleHost(
 private fun CapsulePill(
     card: CapsuleCard,
     expanded: Boolean,
-    showActions: Boolean,
     deckSize: Int,
     pillHeight: Dp,
     gap: Dp,
@@ -338,7 +401,10 @@ private fun CapsulePill(
     } else {
         null
     }
-    val determinate = card.progress.takeIf { it in 0f..1f }
+    // Media progress is extrapolated locally at 1Hz — the source pushes position once and the
+    // rim walks itself, the way the reference does it, without a card re-push per second.
+    val mediaFraction = rememberMediaFraction(card)
+    val determinate = card.progress.takeIf { it in 0f..1f } ?: mediaFraction
     val rimStroke = with(density) { 1.5.dp.toPx() }
 
     Column(
@@ -383,23 +449,43 @@ private fun CapsulePill(
                 .height(pillHeight),
             left = {
                 if (!ring) {
-                    BasicText(
-                        text = card.collapsedText.ifEmpty { card.title },
-                        maxLines = 1,
-                        overflow = TextOverflow.Clip,
-                        style = typography.capsuleGlance.copy(color = PILL_TEXT),
-                        modifier = Modifier.padding(start = 14.dp, end = 8.dp),
-                    )
+                    val artwork = card.artwork
+                    if (artwork != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = artwork,
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .padding(start = 5.dp, end = 8.dp)
+                                .size(pillHeight - 8.dp)
+                                .clip(Superellipse.percentShape(38f, PILL_SMOOTHNESS)),
+                        )
+                    } else {
+                        BasicText(
+                            text = card.collapsedText.ifEmpty { card.title },
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                            style = typography.capsuleGlance.copy(color = PILL_TEXT),
+                            modifier = Modifier.padding(start = 13.dp, end = 8.dp),
+                        )
+                    }
                 }
             },
             right = {
                 if (!ring) {
-                    Glyph(
-                        glyph = card.glyph,
-                        tint = accent,
-                        boxSize = GLYPH_SIZE,
-                        modifier = Modifier.padding(start = 8.dp, end = 14.dp),
-                    )
+                    if (card.kind == SourceKind.MEDIA && card.mediaPlaying) {
+                        EqBars(
+                            tint = accent,
+                            modifier = Modifier.padding(start = 8.dp, end = 13.dp),
+                        )
+                    } else {
+                        Glyph(
+                            glyph = card.glyph,
+                            tint = accent,
+                            boxSize = GLYPH_SIZE,
+                            modifier = Modifier.padding(start = 8.dp, end = 13.dp),
+                        )
+                    }
                 }
             },
         )
@@ -413,27 +499,72 @@ private fun CapsulePill(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp, top = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp, top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (card.title.isNotEmpty() && card.title != card.collapsedText) {
-                    BasicText(
-                        text = card.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = typography.capsuleTitle.copy(color = PILL_TEXT),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    card.artwork?.let { art ->
+                        androidx.compose.foundation.Image(
+                            bitmap = art,
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(Superellipse.percentShape(30f, PILL_SMOOTHNESS)),
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (card.title.isNotEmpty() && card.title != card.collapsedText) {
+                            BasicText(
+                                text = card.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = typography.capsuleTitle.copy(color = PILL_TEXT),
+                            )
+                        }
+                        if (card.subtitle.isNotEmpty()) {
+                            BasicText(
+                                text = card.subtitle,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                style = typography.body.copy(color = PILL_TEXT_DIM),
+                            )
+                        }
+                    }
+                }
+                mediaFraction?.let { fraction ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .drawWithCache {
+                                onDrawBehind {
+                                    val r = size.height / 2f
+                                    drawRoundRect(
+                                        PILL_TEXT_DIM.copy(alpha = 0.25f),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r),
+                                    )
+                                    drawRoundRect(
+                                        accent,
+                                        size = size.copy(width = size.width * fraction),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r),
+                                    )
+                                }
+                            },
                     )
                 }
-                if (card.subtitle.isNotEmpty()) {
-                    BasicText(
-                        text = card.subtitle,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = typography.body.copy(color = PILL_TEXT_DIM),
-                    )
-                }
-                if (showActions && card.actions.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (card.actions.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(
+                            10.dp,
+                            if (card.kind == SourceKind.MEDIA) Alignment.CenterHorizontally
+                            else Alignment.Start,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         card.actions.take(3).forEach { action ->
                             ActionChip(
                                 action = action,
@@ -491,21 +622,61 @@ private fun CutoutRow(
     }
 }
 
-/** A card behind the front one: the same silhouette, narrowed, peeking below the bottom edge. */
+/**
+ * Walks playback forward locally between source pushes: position at its sample time plus wall
+ * time since, over the duration. Ticks at 1Hz — invisible granularity at pill scale, and the
+ * only thing invalidated is the rim.
+ */
 @Composable
-private fun androidx.compose.foundation.layout.BoxScope.Shoulder(depth: Int) {
-    val smoothness = PILL_SMOOTHNESS
+private fun rememberMediaFraction(card: CapsuleCard): Float? {
+    if (card.kind != SourceKind.MEDIA || card.mediaDurationMs <= 0L) return null
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(card.mediaPositionAtMs, card.mediaPlaying) {
+        while (card.mediaPlaying) {
+            now = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+    val elapsed = if (card.mediaPlaying) (now - card.mediaPositionAtMs).coerceAtLeast(0L) else 0L
+    return ((card.mediaPositionMs + elapsed).toFloat() / card.mediaDurationMs).coerceIn(0f, 1f)
+}
+
+/** Three dancing bars — the "something is playing" mark. Still under reduce-motion. */
+@Composable
+private fun EqBars(tint: Color, modifier: Modifier = Modifier) {
+    val motion = LocalMotion.current
+    val phases = if (motion.reduceMotion) {
+        listOf(0.65f, 0.95f, 0.5f)
+    } else {
+        val transition = rememberInfiniteTransition(label = "eq")
+        listOf(340, 260, 420).map { period ->
+            transition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(period, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "bar",
+            ).value
+        }
+    }
     Box(
-        modifier = Modifier
-            .matchParentSize()
-            .graphicsLayer {
-                scaleX = 1f - SHOULDER_INSET * depth
-                translationY = SHOULDER_DROP_DP * depth * this.density
-                alpha = 0.8f / depth
-            }
+        modifier = modifier
+            .size(width = 15.dp, height = 13.dp)
             .drawWithCache {
-                val path = Superellipse.path(size, size.height / 2f, smoothness)
-                onDrawBehind { drawPath(path, SHOULDER_FILL) }
+                val barW = size.width / 5f
+                onDrawBehind {
+                    phases.forEachIndexed { index, level ->
+                        val h = size.height * level
+                        drawRoundRect(
+                            color = tint,
+                            topLeft = Offset(index * 2f * barW, size.height - h),
+                            size = androidx.compose.ui.geometry.Size(barW, h),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(barW / 2f),
+                        )
+                    }
+                }
             },
     )
 }
@@ -629,7 +800,6 @@ private val SCRIM = Color(0x54000000)
 private val PILL_FILL = Color(0xFF000000)
 private val PILL_TEXT = Color(0xF5FFFFFF)
 private val PILL_TEXT_DIM = Color(0x9EFFFFFF)
-private val SHOULDER_FILL = Color(0xE617171B)
 
 /**
  * The pill's own curvature, far rounder than the launcher's default n=4.6. A superellipse at 4.6
@@ -638,9 +808,6 @@ private val SHOULDER_FILL = Color(0xE617171B)
  */
 private const val PILL_SMOOTHNESS = 2.15f
 
-private const val MAX_SHOULDERS = 2
-private const val SHOULDER_INSET = 0.07f
-private const val SHOULDER_DROP_DP = 3.5f
 private const val COMET_PERIOD_MS = 1_400
 private const val AUTO_COLLAPSE_MS = 2_500L
 private const val X_BAND_PX = 36f
@@ -663,5 +830,6 @@ private val FALLBACK_GAP = 10.dp
 private val EXPANDED_CORNER = 24.dp
 private val GLYPH_SIZE = 14.dp
 private val CHIP_GLYPH = 16.dp
+private val SATELLITE_GAP = 6.dp
 private val SHUFFLE_THRESHOLD = 40.dp
 private val DISMISS_THRESHOLD = 42.dp

@@ -478,3 +478,27 @@ above the anchor when there is no room below.
 elevation stacking by the back door) and keeping the centred dialog (the single most
 dated-feeling interaction in the launcher; a menu that appears where you pressed is most of what
 "feels like a modern OS" means at the interaction level).
+
+## D36 — Reference-parity round (user-directed: "1:1 with apple, any means necessary")
+
+**Chosen:** five behaviours matched to the reference island, deviating from §4's letter where the
+two conflict, recorded here per §0.3:
+
+* **Tap opens the app** (`tapIntent`); long-press or drag-down expands. §4 said "tap → EXPANDED";
+  the reference grammar is better and the user asked for it. Cards with no destination still
+  expand on tap.
+* **Two activities split**: the second card detaches into a satellite bubble beside the pill —
+  same black, same curvature, artwork or glyph — and a tap on it swaps it to the front through
+  the §4 pin. The shoulder slivers are retired; §4's "edge-peeking cards behind" is now this.
+* **Expanded always shows actions.** The long-press-to-reveal distinction died with tap-to-open.
+* **Media is alive**: album artwork (an in-memory `MediaMetadata` bitmap over binder — not a disk
+  decode, §5 intact) replaces the collapsed text; three animated equaliser bars replace the note
+  glyph while playing (static under reduce-motion); the rim walks playback progress, extrapolated
+  locally at 1Hz from one pushed position sample so the source never re-pushes per second. The
+  progress lives outside `CapsuleCard.progress` on purpose — a progress-carrying card hits §4's
+  30-second abandoned-progress expiry, and songs are longer than that.
+* The expanded media card gains the reference layout: artwork, title/artist, a thin progress
+  line, centred previous/play-pause/next.
+
+**Naming honesty (§1.2) is unchanged**: the feature is the Capsule everywhere in code, docs and
+UI; "the reference" is a design target, not a name.

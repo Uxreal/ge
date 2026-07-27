@@ -9,8 +9,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.lumen.launcher"
-        versionCode = 9
-        versionName = "0.7.0-polish"
+        versionCode = 10
+        versionName = "0.8.0-live"
         vectorDrawables { useSupportLibrary = true }
     }
 

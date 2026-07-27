@@ -14,6 +14,7 @@ import dev.lumen.launcher.feature.capsule.CapsuleCard
 import dev.lumen.launcher.feature.capsule.CapsuleController
 import dev.lumen.launcher.feature.capsule.CapsuleGlyph
 import dev.lumen.launcher.feature.capsule.SourceKind
+import androidx.compose.ui.graphics.asImageBitmap
 import dev.lumen.launcher.feature.capsule.push.CapsulePushReceiver
 
 /**
@@ -102,10 +103,35 @@ internal class MediaSource(
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)?.trim()
         val playing = session.isPlaying
         val transport = session.transportControls
+        val state = session.playbackState
+
+        // Playback geometry for local extrapolation: the UI moves the rim itself instead of the
+        // source re-pushing a card every second.
+        val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        val position = state?.position ?: 0L
+        val positionAt = state?.lastPositionUpdateTime
+            ?.takeIf { it > 0L }
+            // PlaybackState stamps in elapsed-realtime; the card carries epoch.
+            ?.let { System.currentTimeMillis() - (android.os.SystemClock.elapsedRealtime() - it) }
+            ?: System.currentTimeMillis()
+
+        // Artwork arrives as an already-decoded bitmap over binder — no disk decode (§5). The
+        // instance is cached per track so an unchanged card stays reference-equal and the deck
+        // does not re-commit on every refresh.
+        val artKey = "${'$'}{session.packageName}|${'$'}title|${'$'}artist"
+        if (artKey != lastArtKey) {
+            lastArtKey = artKey
+            lastArt = runCatching {
+                (metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                    ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON))
+                    ?.asImageBitmap()
+            }.getOrNull()
+        }
 
         controller.push(
             CapsuleCard(
-                id = "media:${session.packageName}",
+                id = "media:${'$'}{session.packageName}",
                 sourcePackage = session.packageName,
                 kind = SourceKind.MEDIA,
                 priority = SourceKind.MEDIA.defaultPriority,
@@ -114,6 +140,7 @@ internal class MediaSource(
                 subtitle = artist.orEmpty(),
                 glyph = CapsuleGlyph.Builtin(BuiltinSymbol.NOTE),
                 actions = listOf(
+                    CapsuleAction("Previous", intent = null, run = { transport.skipToPrevious() }, symbol = BuiltinSymbol.PREV),
                     if (playing) {
                         CapsuleAction("Pause", intent = null, run = { transport.pause() }, symbol = BuiltinSymbol.PAUSE)
                     } else {
@@ -127,9 +154,17 @@ internal class MediaSource(
                 // the session does.
                 dismissible = false,
                 verified = true,
+                artwork = lastArt,
+                mediaPlaying = playing,
+                mediaDurationMs = duration.coerceAtLeast(0L),
+                mediaPositionMs = position.coerceAtLeast(0L),
+                mediaPositionAtMs = positionAt,
             ),
         )
     }
+
+    private var lastArtKey: String? = null
+    private var lastArt: androidx.compose.ui.graphics.ImageBitmap? = null
 
     private var lastPackage: String? = null
 
