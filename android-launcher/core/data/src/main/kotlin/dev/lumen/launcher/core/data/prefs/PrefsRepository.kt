@@ -62,6 +62,8 @@ data class PrefsSnapshot(
     val smoothness: Float,
     val workspaceSeeded: Boolean,
     val capsuleEnabled: Boolean,
+    /** D30: false (default) hides the system bar on the home screen; Lumen draws time/battery. */
+    val showStatusBar: Boolean,
     /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
     val capsuleSeenPackages: List<String>,
     val capsuleBlockedPackages: List<String>,
@@ -105,6 +107,8 @@ class PrefsRepository @Inject constructor(
 
     fun setCapsuleEnabled(enabled: Boolean) = update { it.capsuleOff = !enabled }
 
+    fun setShowStatusBar(show: Boolean) = update { it.showStatusBar = show }
+
     /** Capped so a package that renames itself in a loop cannot grow the prefs file without end. */
     fun rememberCapsulePackage(pkg: String) = update { builder ->
         if (pkg in builder.capsuleSeenPackagesList) return@update
@@ -140,6 +144,7 @@ private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
     smoothness = if (smoothness in 2f..6f) smoothness else 4.6f,
     workspaceSeeded = workspaceSeeded,
     capsuleEnabled = !capsuleOff,
+    showStatusBar = showStatusBar,
     capsuleSeenPackages = capsuleSeenPackagesList,
     capsuleBlockedPackages = capsuleBlockedPackagesList,
 )

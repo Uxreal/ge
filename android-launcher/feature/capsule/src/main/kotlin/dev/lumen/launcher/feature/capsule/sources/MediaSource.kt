@@ -122,6 +122,25 @@ internal class MediaSource(
 
     private var lastPackage: String? = null
 
+    /** One sentence for Settings: exactly why a media card is or is not showing. */
+    fun status(): String {
+        val granted = context.packageName in
+            androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context)
+        if (!granted) {
+            return "Off. Requires notification access, granted in system settings. Lumen reads " +
+                "no notifications, only media sessions."
+        }
+        val sessions = runCatching { sessionManager?.getActiveSessions(listenerComponent) }
+            .getOrNull()
+            ?: return "Access looks granted but Android refused the session list. Toggle the " +
+                "access off and on, then reopen Lumen."
+        return when {
+            sessions.isEmpty() -> "On. Nothing is playing right now; start some music and the " +
+                "card appears."
+            else -> "On. Following " + sessions.joinToString { it.packageName } + "."
+        }
+    }
+
     private fun mediaKeyFor(pkg: String) = "$pkg/${SourceKind.MEDIA.name}"
 
     private val MediaController.isPlaying: Boolean

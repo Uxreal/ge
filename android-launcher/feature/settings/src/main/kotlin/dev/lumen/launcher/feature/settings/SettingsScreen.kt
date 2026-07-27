@@ -77,6 +77,7 @@ class SettingsViewModel @Inject constructor(
     fun setParallax(value: Float) = prefsRepo.setParallax(value)
     fun setSmoothness(n: Float) = prefsRepo.setSmoothness(n)
     fun setCapsuleEnabled(enabled: Boolean) = prefsRepo.setCapsuleEnabled(enabled)
+    fun setShowStatusBar(show: Boolean) = prefsRepo.setShowStatusBar(show)
     fun blockCapsulePackage(pkg: String) = prefsRepo.blockCapsulePackage(pkg)
     fun unblockCapsulePackage(pkg: String) = prefsRepo.unblockCapsulePackage(pkg)
 }
@@ -90,6 +91,12 @@ fun SettingsScreen(
     onRequestDefaultHome: () -> Unit,
     versionName: String,
     modifier: Modifier = Modifier,
+    /** Where the Capsule docked and why, reported by the pill itself. */
+    capsuleDiagnostic: String = "",
+    /** Fires a ten-second self-test card into the pill. Null hides the row. */
+    onCapsuleTest: (() -> Unit)? = null,
+    /** Live one-liner from the media source; falls back to a static summary when null. */
+    capsuleMediaStatus: (() -> String)? = null,
 ) {
     val motion = LocalMotion.current
     val typography = LocalTypography.current
@@ -244,28 +251,52 @@ fun SettingsScreen(
                 item {
                     SwitchRow(
                         "Show the Capsule",
-                        "The pill under the status bar. Off hides it entirely.",
+                        "The pill on the camera. Off hides it entirely.",
                         prefs.capsuleEnabled,
                     ) { vm.setCapsuleEnabled(it) }
+                }
+                item {
+                    SwitchRow(
+                        "Show the system status bar",
+                        "Off by default: Lumen hides it on the home screen and draws time and " +
+                            "battery in its own style beside the Capsule. Swipe down from the " +
+                            "top edge to reach the shade either way.",
+                        prefs.showStatusBar,
+                    ) { vm.setShowStatusBar(it) }
+                }
+                if (onCapsuleTest != null) {
+                    item {
+                        ActionRow(
+                            title = "Send a test card",
+                            summary = "Puts a ten-second card in the pill so you can see where " +
+                                "it lives and that it responds. Settings closes so you can watch.",
+                        ) {
+                            onCapsuleTest()
+                            onDismiss()
+                        }
+                    }
+                }
+                if (capsuleDiagnostic.isNotEmpty()) {
+                    item {
+                        RowScaffold(
+                            title = "Where the pill docked",
+                            summary = capsuleDiagnostic,
+                        )
+                    }
                 }
                 item {
                     // §10: media needs notification access as its consent token, granted in system
                     // settings and revocable there. The row states the current answer plainly.
                     val context = LocalContext.current
-                    var mediaGranted by remember {
-                        mutableStateOf(hasNotificationAccess(context))
+                    var mediaSummary by remember {
+                        mutableStateOf(mediaSummaryOf(context, capsuleMediaStatus))
                     }
                     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-                        mediaGranted = hasNotificationAccess(context)
+                        mediaSummary = mediaSummaryOf(context, capsuleMediaStatus)
                     }
                     ActionRow(
                         title = "Media playback in the Capsule",
-                        summary = if (mediaGranted) {
-                            "On. Now playing appears as a card with play, pause and next."
-                        } else {
-                            "Off. Requires notification access, which Android grants in system " +
-                                "settings. Lumen reads no notifications, only media sessions."
-                        },
+                        summary = mediaSummary,
                     ) {
                         runCatching {
                             context.startActivity(
@@ -314,6 +345,14 @@ fun SettingsScreen(
 
 private fun hasNotificationAccess(context: Context): Boolean =
     context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
+
+private fun mediaSummaryOf(context: Context, live: (() -> String)?): String =
+    live?.invoke() ?: if (hasNotificationAccess(context)) {
+        "On. Now playing appears as a card with play, pause and next."
+    } else {
+        "Off. Requires notification access, which Android grants in system settings. Lumen " +
+            "reads no notifications, only media sessions."
+    }
 
 @Composable
 private fun SectionTitle(title: String) {

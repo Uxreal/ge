@@ -3,12 +3,16 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.4.0 — media playback in the Capsule (§4's 700-priority source, behind
-notification-listener consent per §10, with play/pause/next chips — D28), and **minification is
-back on**: the R8-minified 2.9 MB build was walked through cold install → onboarding → PACKED
-seeding → Capsule → push → app launch on the emulator, which is the gate this file set (D29).
-Phase 2 was started before Phase 1's two measured criteria were met; that user-directed deviation
-from §0's phase order is recorded as D18.
+Last updated: 0.5.0 — hardware round 2. The embrace is **confirmed on the Z Flip** ("island
+covers camera"); on its feedback the pill is now pure pitch black with no edge stroke, collapses
+to a bare ring around the lens at rest, and **Lumen owns the top band**: the system status bar is
+hidden on the home surface (opt-out in Settings) and the launcher draws time and battery in its
+own type beside the pill (D30, D31). Hiding the bar also hands the pill its touches back — a
+visible bar consumes every tap in its band. Also: the docking geometry no longer has a 1-second
+give-up that could permanently kill the pill on a slow cold start; Settings → Capsule gained a
+self-test card, a live docking report, and a live media-source status line for field debugging.
+Media (D28) and minification at 2.9 MB (D29) landed in 0.4.0. Phase-order deviation remains
+recorded as D18.
 
 ---
 
@@ -40,7 +44,7 @@ from §0's phase order is recorded as D18.
 
 | Criterion (§4 / §13) | State |
 |---|---|
-| GLANCE "grows around the cutout" | **Done in code, geometry unit-tested.** The pill embraces a centred punch-hole (D25); the policy has 7 tests including the wide-notch and corner-hole rejections. The embrace itself is **not** emulator-verifiable — no emulated cutout is a small centred hole — so its first visual check happens on the Flip |
+| GLANCE "grows around the cutout" | **Confirmed on the Z Flip** ("island covers camera"). The policy has 7 unit tests including the wide-notch and corner-hole rejections |
 | Four states: `DORMANT` / `GLANCE` / `EXPANDED` / `STACKED` | **Done, emulator-verified.** `DORMANT` is reachable but not the resting state — D19 keeps an ambient clock source alive at priority 100 so the Capsule is a permanent handle |
 | Arbitration: 800ms front dwell, 400ms coalesce, dedupe by package + kind, 8s manual hold, priority order, expiry | **Done and tested** — 20 unit tests against a virtual clock, including the flicker case (a source re-pushing itself does not re-arm its own dwell) |
 | Auto-expand once for 2.5s at priority ≥800 | **Done and tested** |

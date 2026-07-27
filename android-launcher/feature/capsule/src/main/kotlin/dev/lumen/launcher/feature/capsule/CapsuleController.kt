@@ -111,6 +111,32 @@ class CapsuleController @Inject constructor(
     /** Re-checks media-session access; called on resume and when the listener connects. */
     fun refreshMedia() = media.refresh()
 
+    /** One sentence for Settings about the media source's current state. */
+    fun mediaStatus(): String = media.status()
+
+    /**
+     * A self-clearing demo card, fired from Settings. It exists for field debugging: "tap Test —
+     * did a card appear?" splits every possible fault into pill-pipeline versus source in one
+     * step, on the user's own device.
+     */
+    fun pushTest() {
+        push(
+            CapsuleCard(
+                id = "capsule.self-test",
+                sourcePackage = "capsule.self-test",
+                kind = SourceKind.THIRD_PARTY,
+                priority = 450,
+                collapsedText = "It works",
+                title = "Capsule test",
+                subtitle = "This card clears itself in ten seconds.",
+                progress = 0.66f,
+                glyph = CapsuleGlyph.Builtin(BuiltinSymbol.SPARK),
+                expiresAt = System.currentTimeMillis() + 10_500L,
+                verified = true,
+            ),
+        )
+    }
+
     fun blockPackage(pkg: String) {
         prefs.blockCapsulePackage(pkg)
         commands.trySend(Command.ClearPackage(pkg))

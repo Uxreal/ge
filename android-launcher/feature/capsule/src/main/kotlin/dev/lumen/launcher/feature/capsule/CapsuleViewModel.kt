@@ -2,7 +2,9 @@ package dev.lumen.launcher.feature.capsule
 
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 
 /**
@@ -21,4 +23,15 @@ class CapsuleViewModel @Inject constructor(
     fun dismiss(card: CapsuleCard) = controller.dismiss(card)
 
     fun refreshMedia() = controller.refreshMedia()
+
+    fun mediaStatus(): String = controller.mediaStatus()
+
+    fun pushTestCard() = controller.pushTest()
+
+    private val _geometryDesc = MutableStateFlow("Not resolved yet.")
+    val geometryDesc: StateFlow<String> = _geometryDesc.asStateFlow()
+
+    fun reportGeometry(description: String) {
+        _geometryDesc.value = description
+    }
 }

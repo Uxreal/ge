@@ -26,6 +26,7 @@ message LumenPrefs {
   repeated string capsule_seen_packages = 15;
   repeated string capsule_blocked_packages = 16;
   bool capsule_off = 17;        // inverted so the zero-value means "Capsule on"
+  bool show_status_bar = 18;    // zero-value = hidden: Lumen owns the top band by default (D30)
 }
 
 // Launch statistics for the drawer's suggested-apps row (§6).

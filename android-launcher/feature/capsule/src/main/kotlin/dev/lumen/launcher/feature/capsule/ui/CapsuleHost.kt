@@ -68,6 +68,7 @@ import dev.lumen.launcher.feature.capsule.CapsuleCard
 import dev.lumen.launcher.feature.capsule.CapsuleDeck
 import dev.lumen.launcher.feature.capsule.CapsuleGlyph
 import dev.lumen.launcher.feature.capsule.CapsuleState
+import dev.lumen.launcher.feature.capsule.SourceKind
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.min
@@ -94,6 +95,10 @@ fun CapsuleHost(
     onPin: (String) -> Unit = {},
     onDismiss: (CapsuleCard) -> Unit = {},
     onLaunch: (PendingIntent) -> Unit = {},
+    /** Human-readable docking result, surfaced in Settings so field reports carry geometry. */
+    onGeometryResolved: (String) -> Unit = {},
+    /** Draw Lumen's own time/battery clusters beside the pill (the system bar is hidden). */
+    showStatusStrip: Boolean = false,
 ) {
     val motion = LocalMotion.current
     val haptics = LocalHaptics.current
@@ -121,17 +126,21 @@ fun CapsuleHost(
         showActions = false
     }
 
-    // Where the pill docks. Resolved once after attach through the pure, tested policy in
+    // Where the pill docks. Resolved after attach through the pure, tested policy in
     // [CapsuleGeometry]: a small centred punch-hole is embraced (the pill swallows the camera);
     // notches, corner holes and cutout-less screens get a plain pill under the status bar.
+    //
+    // The loop never gives up. An earlier build polled for one second and then stopped — on a
+    // busy cold start (exactly what a freshly-installed default launcher does) that made the
+    // pill permanently absent. The identity feature does not get a timeout.
     var geometry by remember { mutableStateOf<PillGeometry?>(null) }
     LaunchedEffect(view) {
-        repeat(20) {
+        while (true) {
             val insets = view.rootWindowInsets
             if (insets != null) {
-                val rect = insets.displayCutout?.boundingRectTop
+                val rect = insets.displayCutout?.boundingRectTop?.takeIf { !it.isEmpty() }
                 val width = view.width.takeIf { it > 0 } ?: view.resources.displayMetrics.widthPixels
-                geometry = with(density) {
+                val resolvedNow = with(density) {
                     CapsuleGeometry.resolve(
                         cutout = rect?.let { CutoutRect(it.left, it.top, it.right, it.bottom) },
                         screenWidthPx = width,
@@ -145,9 +154,23 @@ fun CapsuleHost(
                         maxHolePx = MAX_HOLE.roundToPx(),
                     )
                 }
+                geometry = resolvedNow
+                onGeometryResolved(
+                    buildString {
+                        if (rect == null) {
+                            append("No display cutout reported by this screen. ")
+                        } else {
+                            append("Cutout ${rect.width()}×${rect.height()}px at x=${rect.centerX().toInt()}. ")
+                        }
+                        append(
+                            if (resolvedNow.embraced) "Pill docked on the camera."
+                            else "Pill docked below the status bar.",
+                        )
+                    },
+                )
                 return@LaunchedEffect
             }
-            delay(50)
+            delay(100)
         }
     }
     val resolved = geometry ?: return
@@ -160,11 +183,22 @@ fun CapsuleHost(
     val configuration = LocalConfiguration.current
     val expandedWidth = min(configuration.screenWidthDp - 32, 356).dp
 
-    AnimatedVisibility(
+    Box(modifier = modifier) {
+        if (showStatusStrip) {
+            StatusStrip(
+                topPx = topOffsetPx,
+                bandHeight = pillHeight,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth(),
+            )
+        }
+
+        AnimatedVisibility(
         visible = deck.state != CapsuleState.DORMANT && front != null,
         enter = fadeIn(motion.crossfade()),
         exit = fadeOut(motion.crossfade()),
-        modifier = modifier,
+        modifier = Modifier.align(Alignment.TopCenter),
     ) {
         val card = front ?: return@AnimatedVisibility
         val pressScale by animateFloatAsState(
@@ -196,6 +230,7 @@ fun CapsuleHost(
                 pillHeight = pillHeight,
                 gap = gap,
                 expandedWidth = expandedWidth,
+                embraced = resolved.embraced,
                 onLaunch = onLaunch,
                 modifier = Modifier
                     .capsuleGestures(
@@ -225,6 +260,7 @@ fun CapsuleHost(
             )
         }
     }
+    }
 }
 
 /**
@@ -241,6 +277,7 @@ private fun CapsulePill(
     pillHeight: Dp,
     gap: Dp,
     expandedWidth: Dp,
+    embraced: Boolean,
     onLaunch: (PendingIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -290,7 +327,6 @@ private fun CapsulePill(
                 val path = Superellipse.path(size, cornerPx, smoothness)
                 onDrawBehind {
                     drawPath(path, PILL_FILL)
-                    drawPath(path, PILL_EDGE, style = Stroke(width = 1f))
                     if (determinate != null || comet != null) {
                         drawRimProgress(
                             path = path,
@@ -313,27 +349,36 @@ private fun CapsulePill(
             },
     ) {
         // The header: never swaps, never rescales. Time sits left of the camera, glyph right.
+        //
+        // At rest — the ambient clock as the only card, docked on a real camera, with Lumen's own
+        // status strip carrying the time — the pill collapses to a bare ring around the lens
+        // (D31): content-free black, the island at its most island. Any real event grows it back.
+        val ring = embraced && !expanded && card.kind == SourceKind.AMBIENT
         CutoutRow(
             gap = gap,
             modifier = Modifier
                 .then(if (expanded) Modifier.fillMaxWidth() else Modifier)
                 .height(pillHeight),
             left = {
-                BasicText(
-                    text = card.collapsedText.ifEmpty { card.title },
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                    style = typography.capsuleGlance.copy(color = PILL_TEXT),
-                    modifier = Modifier.padding(start = 14.dp, end = 8.dp),
-                )
+                if (!ring) {
+                    BasicText(
+                        text = card.collapsedText.ifEmpty { card.title },
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                        style = typography.capsuleGlance.copy(color = PILL_TEXT),
+                        modifier = Modifier.padding(start = 14.dp, end = 8.dp),
+                    )
+                }
             },
             right = {
-                Glyph(
-                    glyph = card.glyph,
-                    tint = accent,
-                    boxSize = GLYPH_SIZE,
-                    modifier = Modifier.padding(start = 8.dp, end = 14.dp),
-                )
+                if (!ring) {
+                    Glyph(
+                        glyph = card.glyph,
+                        tint = accent,
+                        boxSize = GLYPH_SIZE,
+                        modifier = Modifier.padding(start = 8.dp, end = 14.dp),
+                    )
+                }
             },
         )
 
@@ -555,9 +600,9 @@ private fun Modifier.capsuleGestures(
 private fun rubberBand(raw: Float, limitPx: Float): Float =
     sign(raw) * limitPx * (1f - 1f / (1f + abs(raw) / limitPx))
 
-// Camera-black, matching the punch-hole it swallows. Not theme-dependent: the camera has no theme.
-private val PILL_FILL = Color(0xFA0B0B0D)
-private val PILL_EDGE = Color(0x1AFFFFFF)
+// Pitch black and fully opaque, matching the physical camera it swallows (user-directed, D31).
+// The "no pure #000" taste rule is for surfaces that carry content; this one impersonates a hole.
+private val PILL_FILL = Color(0xFF000000)
 private val PILL_TEXT = Color(0xF5FFFFFF)
 private val PILL_TEXT_DIM = Color(0x9EFFFFFF)
 private val SHOULDER_FILL = Color(0xE617171B)

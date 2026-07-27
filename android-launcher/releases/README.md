@@ -2,16 +2,14 @@
 
 | File | What it is |
 |---|---|
-| `lumen-0.4.0-media.apk` | **2.9 MB, R8-minified.** The Capsule on the camera cutout, plus media playback as a card (opt-in via Settings → Capsule → Media playback). The minified pipeline was walked end to end on an Android 15 emulator: cold install → onboarding → PACKED seeding with real icons → Capsule pill → an `am broadcast` push drawing rim progress → an app launched from the grid. |
-| `lumen-0.1.1-phase1.apk` | Phase 1 only, no Capsule, unminified. The old fallback, kept until 0.4.0 survives on real hardware. |
+| `lumen-0.5.0-island.apk` | **2.9 MB, R8-minified.** The island round: pitch-black pill that collapses to a bare ring around the camera at rest, the system status bar hidden on the home screen with Lumen drawing time and battery in its own type beside the pill (opt-out in Settings → Capsule), media playback cards, and field diagnostics (a self-test card, a live docking report, and a media status line, all under Settings → Capsule). |
+| `lumen-0.1.1-phase1.apk` | Phase 1 only, no Capsule, unminified. The old fallback. |
 
-sha256 of `lumen-0.4.0-media.apk`:
-`a57081dde68b522a0a7241f51b27c61202807e4d3ccec721e6c2ef905ecf49f5`
+sha256 of `lumen-0.5.0-island.apk`:
+`74656500ffabdeddbd3cc932f7573f5b107ea81fa8d8b9c9538ebee4d0b61539`
 
-0.3.x are withdrawn: 0.3.0's pill floated below the status bar and its push API was unreachable;
-0.3.1 fixed both but shipped unminified at 46 MB. Minification is back on as of 0.4.0 — the gate
-("watch the minified output work on a screen") is met, see DECISIONS D29.
+The camera embrace is confirmed on a Z Flip as of 0.4.0 ("island covers camera"); 0.5.0 answers
+the rest of that report — darker, and the top icons redone to fit. Swipe down from the very top
+edge to summon the system bar and notification shade; they hide again on their own.
 
-Still unverified anywhere: the cutout embrace against a real punch-hole (unit-tested geometry; no
-emulated cutout is a small centred one), the media card (this emulator has no active MediaSession
-to show), and everything about feel. Verify a download with `apksigner verify --print-certs <apk>`.
+Verify a download with `apksigner verify --print-certs <apk>`.

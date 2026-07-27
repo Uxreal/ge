@@ -390,3 +390,39 @@ paths cover every reflective surface that R8 could plausibly break (Room, protob
 
 **Rejected:** re-enabling on the argument that AGP 8.13 "probably fixed it". That reasoning was
 free once and cost a release.
+
+## D30 — Lumen owns the top of the screen: the system status bar is hidden on the home surface
+
+**Chosen:** with the Capsule enabled (and a Settings switch to opt out), the launcher hides the
+system status bar and draws its own clusters in the pill band — time left, battery right, in §3's
+type — so the top reads as one composed row: time … camera pill … battery. A top-edge swipe still
+summons the bar and the shade transiently.
+
+**Rejected:** leaving the system bar to fight the pill (its icons flank the island in a different
+visual language, which is what "all of the top icons need to be redone to fit it" was reporting),
+and trying to restyle the bar (a launcher cannot).
+
+**Why:** the field report asked for exactly this, and §1's thesis already claims the top of the
+screen for the Capsule as "the OS's only handle". It also fixes an interaction fault by
+construction: a visible status bar window consumes every touch in its band, which made the
+camera-docked pill look tappable while actually being inert — with the bar hidden the band belongs
+to the launcher and the pill's tap, long-press and swipes work. Signal/Wi-Fi indicators are
+deliberately not replicated (they would need connectivity callbacks and privileged state the strip
+does not want); the transient bar is one swipe away.
+
+## D31 — Pitch black, and a bare ring at rest
+
+**Chosen:** the pill fill is pure opaque black (user-directed: "needs to be darker, pitch black"),
+with no edge stroke — the physical camera it swallows is pitch black, and any lighter fill or
+hairline reads as a sticker next to a hole rather than one object. At rest — ambient clock as the
+only card, docked on a real camera, with the D30 strip already showing the time — the pill
+collapses to a content-free ring hugging the lens; any real card grows it back. In fallback mode
+(no camera) the clock text stays, since there is no lens to ring.
+
+**Rejected:** the near-black translucent fill with a hairline (previous build), and keeping the
+time inside the pill at rest, which duplicated the strip's clock a centimetre away.
+
+**Noted:** §1.1 lists "a flat black rounded rect island" as an anti-default *as sole identity*.
+The identity here is carried by everything the flat-black clone lacks — the superellipse
+silhouette, the rim-as-progress, the shoulder deck, the ring-at-rest behaviour — and the colour is
+what the physical trick requires.

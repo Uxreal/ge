@@ -95,6 +95,22 @@ fun LauncherRoot(
         var overlay by remember { mutableStateOf(Overlay.NONE) }
         val view = LocalView.current
 
+        // D30: Lumen owns the top band by default — the system bar is hidden on the home screen
+        // (a top-edge swipe still summons it and the shade transiently) and the Capsule's strip
+        // draws time and battery instead. This also hands the pill's touches back to the app:
+        // a visible system bar consumes every tap in its band, which made the docked pill inert.
+        val ownTop = prefs.capsuleEnabled && !prefs.showStatusBar && prefs.onboardingDone
+        LaunchedEffect(ownTop) {
+            val controller = androidx.core.view.WindowCompat.getInsetsController(activity.window, view)
+            controller.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (ownTop) {
+                controller.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            } else {
+                controller.show(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            }
+        }
+
         // The user leaves for the system's default-apps screen and comes straight back, so the
         // check must re-run on every resume — not once.
         var isDefaultHome by remember { mutableStateOf(DefaultHome.isDefault(activity)) }
@@ -206,7 +222,11 @@ fun LauncherRoot(
                         onPin = capsuleVm::pinFront,
                         onDismiss = capsuleVm::dismiss,
                         onLaunch = { intent -> runCatching { intent.send() } },
-                        modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
+                        onGeometryResolved = capsuleVm::reportGeometry,
+                        showStatusStrip = ownTop,
+                        modifier = Modifier
+                            .align(androidx.compose.ui.Alignment.TopCenter)
+                            .fillMaxWidth(),
                     )
                 }
 
@@ -222,6 +242,7 @@ fun LauncherRoot(
                     },
                 )
 
+                val capsuleGeometryDesc by capsuleVm.geometryDesc.collectAsStateWithLifecycle()
                 SettingsScreen(
                     vm = settingsVm,
                     visible = overlay == Overlay.SETTINGS,
@@ -229,6 +250,9 @@ fun LauncherRoot(
                     onSetHomeModel = { model -> homeVm.setModel(model) },
                     onRequestDefaultHome = requestDefaultHome,
                     versionName = BuildConfig.VERSION_NAME,
+                    capsuleDiagnostic = capsuleGeometryDesc,
+                    onCapsuleTest = { capsuleVm.pushTestCard() },
+                    capsuleMediaStatus = { capsuleVm.mediaStatus() },
                 )
 
                 WidgetPickerSheet(
