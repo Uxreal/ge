@@ -453,3 +453,28 @@ at pill scale, with the corner radius equal to half the height, a 4.6 exponent f
 into visibly squared ends — around a *circular* camera lens, unmistakably wrong. The smoothness
 token exists to be tuned per surface; this is the first surface whose job requires the round end
 of its range.
+
+## D34 — The reported cutout is not the visual lens
+
+**Chosen:** for a roughly circular top cutout, the effective hole is capped at 22dp — centred on
+the reported centre — before margins (now 3dp, was 5dp) are added; clearly non-circular cutouts
+(dual-lens pills, aspect outside 0.6–1.5) are taken at their reported size. Field report from the
+Z Flip: "it is still very large."
+
+**Why:** OEMs report `boundingRectTop` with safety padding around the physical lens, and a pill
+derived naively from that rect inherits the padding twice — theirs plus ours. Every mainstream
+punch-hole lens is visually well under 22dp, so the cap hugs the glass without ever clipping it,
+and the aspect guard keeps genuinely wide cutouts covered. Unit-tested both ways.
+
+## D35 — Foreground moments read as foreground
+
+**Chosen:** two "modern OS" behaviours. The expanded island dims everything behind it (25%
+black, on the cross-fade token) and a tap anywhere off the card collapses it. The drawer's
+long-press menu is no longer a centred dialog: it anchors to the pressed icon's bounds, springs
+out beside the thumb on the `morph` spring with the app's icon and name as its header, and flips
+above the anchor when there is no room below.
+
+**Rejected:** Material's `DropdownMenu` (carries its own elevation/shape language, §1.1's
+elevation stacking by the back door) and keeping the centred dialog (the single most
+dated-feeling interaction in the launcher; a menu that appears where you pressed is most of what
+"feels like a modern OS" means at the interaction level).

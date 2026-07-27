@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -152,6 +153,7 @@ fun CapsuleHost(
                         fallbackTopGapPx = 4.dp.roundToPx(),
                         minTopPx = 2.dp.roundToPx(),
                         maxHolePx = MAX_HOLE.roundToPx(),
+                        holeCapPx = HOLE_CAP.roundToPx(),
                     )
                 }
                 geometry = resolvedNow
@@ -184,6 +186,26 @@ fun CapsuleHost(
     val expandedWidth = min(configuration.screenWidthDp - 32, 356).dp
 
     Box(modifier = modifier) {
+        // The island expanded is a foreground moment: everything behind falls back a step, and a
+        // tap anywhere off the card puts it away.
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(motion.crossfade()),
+            exit = fadeOut(motion.crossfade()),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(SCRIM)
+                    .pointerInput(Unit) {
+                        detectTapGestures {
+                            expanded = false
+                            showActions = false
+                        }
+                    },
+            )
+        }
+
         if (showStatusStrip) {
             StatusStrip(
                 topPx = topOffsetPx,
@@ -600,6 +622,8 @@ private fun Modifier.capsuleGestures(
 private fun rubberBand(raw: Float, limitPx: Float): Float =
     sign(raw) * limitPx * (1f - 1f / (1f + abs(raw) / limitPx))
 
+private val SCRIM = Color(0x54000000)
+
 // Pitch black and fully opaque, matching the physical camera it swallows (user-directed, D31).
 // The "no pure #000" taste rule is for surfaces that carry content; this one impersonates a hole.
 private val PILL_FILL = Color(0xFF000000)
@@ -623,15 +647,18 @@ private const val X_BAND_PX = 36f
 private const val Y_BAND_PX = 64f
 
 /** Material above and below the hole; the pill's height derives from the hole, not a constant. */
-private val HOLE_MARGIN = 5.dp
+private val HOLE_MARGIN = 3.dp
 
 /** Air between the hole and the nearest content on each side. */
-private val HOLE_BREATH = 7.dp
+private val HOLE_BREATH = 5.dp
+
+/** Assumed maximum size of a round lens; larger reports are OEM padding, tightened to this. */
+private val HOLE_CAP = 22.dp
 
 /** Anything taller than this is a notch wearing a costume, not a punch-hole. */
 private val MAX_HOLE = 44.dp
 
-private val FALLBACK_HEIGHT = 32.dp
+private val FALLBACK_HEIGHT = 30.dp
 private val FALLBACK_GAP = 10.dp
 private val EXPANDED_CORNER = 24.dp
 private val GLYPH_SIZE = 14.dp

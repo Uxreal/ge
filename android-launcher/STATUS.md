@@ -3,7 +3,13 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.6.0 — hardware round 3 ("it is better"). The drawer's default view is now an
+Last updated: 0.7.0 — hardware round 4 ("still very large... make it feel like a modern os").
+The pill now caps the assumed lens size at 22dp for round holes (OEMs pad the reported rect;
+D34) with tighter 3dp margins, the expanded island dims the screen behind it and collapses on an
+outside tap, and the drawer's long-press menu anchors to the pressed icon and springs from it
+instead of appearing as a centred dialog (D35). Not screenshot-verified: the build emulator's
+system_server is in a terminal ANR storm (host fault, on record); compile + 77 unit tests pass.
+Previously (0.6.0): hardware round 3 ("it is better"). The drawer's default view is now an
 App Library (D32): category shelves as two columns of tiles, three direct-launch icons and a
 mini-cluster per tile, with the A–Z grid one chip away and search unchanged. The Capsule draws at
 its own n=2.15 curvature (D33) after the "island looks like a square" report. Media gained a

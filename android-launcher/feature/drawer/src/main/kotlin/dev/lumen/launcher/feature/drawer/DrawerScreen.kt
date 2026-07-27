@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -43,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.input.ImeAction
@@ -146,7 +150,7 @@ fun DrawerScreen(
     val capture = LocalBackdropCapture.current
 
     var query by remember { mutableStateOf("") }
-    var menuFor by remember { mutableStateOf<AppInfo?>(null) }
+    var menuFor by remember { mutableStateOf<Pair<AppInfo, Rect?>?>(null) }
     var alphabetical by remember { mutableStateOf(false) }
     var openCategory by remember { mutableStateOf<AppCategory?>(null) }
     LaunchedEffect(visible) {
@@ -236,7 +240,7 @@ fun DrawerScreen(
                             .padding(bottom = 10.dp),
                     ) {
                         suggestions.forEach { app ->
-                            DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { menuFor = it })
+                            DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { a, r -> menuFor = a to r })
                         }
                     }
                 }
@@ -272,7 +276,7 @@ fun DrawerScreen(
                             ) {
                                 itemsIndexed(filtered, key = { _, app -> app.key.flat }) { _, app ->
                                     Box(contentAlignment = Alignment.Center) {
-                                        DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { menuFor = it })
+                                        DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { a, r -> menuFor = a to r })
                                     }
                                 }
                             }
@@ -303,7 +307,7 @@ fun DrawerScreen(
                                 members = members,
                                 onBack = { openCategory = null },
                                 onLaunched = onDismiss,
-                                onMenu = { menuFor = it },
+                                onMenu = { a, r -> menuFor = a to r },
                             )
                         }
 
@@ -314,7 +318,7 @@ fun DrawerScreen(
                                 shelves = shelves,
                                 onOpen = { openCategory = it },
                                 onLaunched = onDismiss,
-                                onMenu = { menuFor = it },
+                                onMenu = { a, r -> menuFor = a to r },
                             )
                         }
                     }
@@ -357,9 +361,11 @@ fun DrawerScreen(
                 }
             }
 
-            menuFor?.let { app ->
+            menuFor?.let { (app, anchor) ->
                 AppActionMenu(
                     app = app,
+                    anchor = anchor,
+                    icon = rememberDrawerIcon(vm.iconCache, app.key, 40.dp),
                     canAddToHome = onAddToHome != null,
                     canUninstall = vm.canUninstall(app.key),
                     onAddToHome = {
@@ -384,12 +390,15 @@ fun DrawerScreen(
 }
 
 /**
- * The long-press menu. "Add to Home" is the reason it exists — without it, `FREEFORM` had no way
- * to put an app on a page at all.
+ * The long-press menu, anchored to the icon that was pressed rather than floating centred — the
+ * card springs out beside your thumb on the `morph` spring, the way a modern OS does it. "Add to
+ * Home" is the reason it exists; without it, `FREEFORM` had no way to put an app on a page.
  */
 @Composable
 private fun AppActionMenu(
     app: AppInfo,
+    anchor: Rect?,
+    icon: androidx.compose.ui.graphics.ImageBitmap?,
     canAddToHome: Boolean,
     canUninstall: Boolean,
     onAddToHome: () -> Unit,
@@ -398,25 +407,84 @@ private fun AppActionMenu(
     onDismiss: () -> Unit,
 ) {
     val typography = LocalTypography.current
-    Box(
+    val colors = MaterialTheme.colorScheme
+    val density = LocalDensity.current
+    val motion = LocalMotion.current
+
+    var entered by remember(app) { mutableStateOf(false) }
+    LaunchedEffect(app) { entered = true }
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (entered) 1f else 0.78f,
+        animationSpec = motion.morph(),
+        label = "menu-scale",
+    )
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = motion.crossfade(),
+        label = "menu-alpha",
+    )
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
+            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f * alpha))
             .pointerInput(app) { detectTapGestures(onTap = { onDismiss() }) },
-        contentAlignment = Alignment.Center,
     ) {
+        val menuWidthPx = with(density) { MENU_WIDTH.roundToPx() }
+        val gapPx = with(density) { 10.dp.roundToPx() }
+        val marginPx = with(density) { 12.dp.roundToPx() }
+        val maxWpx = constraints.maxWidth
+        val maxHpx = constraints.maxHeight
+        // Rows are ~48dp; header ~64dp. Close enough for the above/below decision.
+        val rows = 1 + (if (canAddToHome) 1 else 0) + 1 + (if (canUninstall) 1 else 0)
+        val estHeightPx = with(density) { (64.dp + 48.dp * (rows - 1)).roundToPx() }
+
+        val offset = if (anchor != null) {
+            val x = (anchor.centerX() - menuWidthPx / 2).coerceIn(marginPx, maxWpx - menuWidthPx - marginPx)
+            val below = anchor.bottom + gapPx
+            val y = if (below + estHeightPx <= maxHpx - marginPx) below
+            else (anchor.top - gapPx - estHeightPx).coerceAtLeast(marginPx)
+            androidx.compose.ui.unit.IntOffset(x, y)
+        } else {
+            androidx.compose.ui.unit.IntOffset((maxWpx - menuWidthPx) / 2, maxHpx / 3)
+        }
+
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.78f)
-                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.extraLarge)
+                .offset { offset }
+                .width(MENU_WIDTH)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.alpha = alpha
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                        0.5f,
+                        if (anchor != null && offset.y > anchor.centerY()) 0f else 1f,
+                    )
+                }
+                .background(colors.surface, MaterialTheme.shapes.extraLarge)
                 .pointerInput(Unit) { detectTapGestures { } }
-                .padding(vertical = 10.dp),
+                .padding(vertical = 8.dp),
         ) {
-            BasicText(
-                text = app.label,
-                style = typography.capsuleTitle.copy(color = MaterialTheme.colorScheme.onSurface),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                AppIcon(
+                    icon = icon,
+                    label = app.label,
+                    iconSize = 38.dp,
+                    showLabel = false,
+                    interactive = false,
+                    onClick = {},
+                )
+                BasicText(
+                    text = app.label,
+                    maxLines = 1,
+                    style = typography.capsuleTitle.copy(color = colors.onSurface),
+                )
+            }
             if (canAddToHome) MenuRow("Add to Home", onAddToHome)
             MenuRow("App info", onAppInfo)
             if (canUninstall) MenuRow("Uninstall", onUninstall)
@@ -442,7 +510,7 @@ private fun DrawerAppIcon(
     vm: DrawerViewModel,
     app: AppInfo,
     onLaunched: () -> Unit,
-    onMenu: (AppInfo) -> Unit,
+    onMenu: (AppInfo, Rect?) -> Unit,
 ) {
     val icon = rememberDrawerIcon(vm.iconCache, app.key, 56.dp)
     AppIcon(
@@ -454,7 +522,7 @@ private fun DrawerAppIcon(
         accessibilityActions = buildList {
             add(
                 androidx.compose.ui.semantics.CustomAccessibilityAction("Add to Home") {
-                    onMenu(app)
+                    onMenu(app, null)
                     true
                 },
             )
@@ -468,7 +536,7 @@ private fun DrawerAppIcon(
         onClick = { bounds ->
             if (vm.launch(app.key, bounds)) onLaunched()
         },
-        onLongPress = { onMenu(app) },
+        onLongPress = { bounds -> onMenu(app, bounds) },
     )
 }
 
@@ -504,7 +572,7 @@ private fun LibraryShelves(
     shelves: List<Pair<AppCategory, List<AppInfo>>>,
     onOpen: (AppCategory) -> Unit,
     onLaunched: () -> Unit,
-    onMenu: (AppInfo) -> Unit,
+    onMenu: (AppInfo, Rect?) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -532,7 +600,7 @@ private fun CategoryTile(
     members: List<AppInfo>,
     onOpen: () -> Unit,
     onLaunched: () -> Unit,
-    onMenu: (AppInfo) -> Unit,
+    onMenu: (AppInfo, Rect?) -> Unit,
 ) {
     val typography = LocalTypography.current
     val colors = MaterialTheme.colorScheme
@@ -577,7 +645,7 @@ private fun TileSlot(
     vm: DrawerViewModel,
     app: AppInfo?,
     onLaunched: () -> Unit,
-    onMenu: (AppInfo) -> Unit,
+    onMenu: (AppInfo, Rect?) -> Unit,
 ) {
     if (app == null) {
         Box(Modifier.size(TILE_ICON))
@@ -590,7 +658,7 @@ private fun TileSlot(
         iconSize = TILE_ICON,
         showLabel = false,
         onClick = { bounds -> if (vm.launch(app.key, bounds)) onLaunched() },
-        onLongPress = { onMenu(app) },
+        onLongPress = { bounds -> onMenu(app, bounds) },
     )
 }
 
@@ -635,7 +703,7 @@ private fun CategoryPage(
     members: List<AppInfo>,
     onBack: () -> Unit,
     onLaunched: () -> Unit,
-    onMenu: (AppInfo) -> Unit,
+    onMenu: (AppInfo, Rect?) -> Unit,
 ) {
     val typography = LocalTypography.current
     val colors = MaterialTheme.colorScheme
@@ -675,6 +743,7 @@ private fun CategoryPage(
     }
 }
 
+private val MENU_WIDTH = 232.dp
 private val TILE_ICON = 52.dp
 private val MINI_ICON = 18.dp
 

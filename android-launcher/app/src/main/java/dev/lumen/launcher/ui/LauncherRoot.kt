@@ -224,9 +224,7 @@ fun LauncherRoot(
                         onLaunch = { intent -> runCatching { intent.send() } },
                         onGeometryResolved = capsuleVm::reportGeometry,
                         showStatusStrip = ownTop,
-                        modifier = Modifier
-                            .align(androidx.compose.ui.Alignment.TopCenter)
-                            .fillMaxWidth(),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
 

@@ -45,17 +45,28 @@ object CapsuleGeometry {
         fallbackTopGapPx: Int,
         minTopPx: Int,
         maxHolePx: Int,
+        /**
+         * OEMs report the cutout rect with safety padding around the visual lens (the field
+         * report from a real punch-hole: "still very large"). A roughly circular hole larger
+         * than this is assumed to be padding and tightened to it, centred on the same point; a
+         * clearly non-circular cutout (dual-lens pill) is taken at its reported word.
+         */
+        holeCapPx: Int = Int.MAX_VALUE,
     ): PillGeometry {
         if (cutout != null && !cutout.isEmpty && screenWidthPx > 0 &&
             isPunchHole(cutout, screenWidthPx, maxHolePx)
         ) {
-            val height = cutout.height + 2 * holeMarginPx
+            val aspect = cutout.width.toFloat() / cutout.height.toFloat()
+            val roundish = aspect in 0.6f..1.5f
+            val holeW = if (roundish) minOf(cutout.width, holeCapPx) else cutout.width
+            val holeH = if (roundish) minOf(cutout.height, holeCapPx) else cutout.height
+            val height = holeH + 2 * holeMarginPx
             return PillGeometry(
                 embraced = true,
                 heightPx = height,
                 topPx = (cutout.centerY - height / 2f).toInt().coerceAtLeast(minTopPx),
                 xOffsetPx = (cutout.centerX - screenWidthPx / 2f).toInt(),
-                gapPx = cutout.width + 2 * holeBreathPx,
+                gapPx = holeW + 2 * holeBreathPx,
             )
         }
         return PillGeometry(

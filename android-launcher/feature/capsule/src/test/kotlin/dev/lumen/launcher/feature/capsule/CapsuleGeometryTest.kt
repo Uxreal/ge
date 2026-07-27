@@ -29,7 +29,10 @@ class CapsuleGeometryTest {
         fallbackTopGapPx = 10,
         minTopPx = 5,
         maxHolePx = 115,
+        holeCapPx = holeCap,
     )
+
+    private var holeCap: Int = Int.MAX_VALUE
 
     @Test
     fun `a centred punch-hole is embraced`() {
@@ -93,5 +96,29 @@ class CapsuleGeometryTest {
     @Test
     fun `an empty rect falls back`() {
         assertFalse(resolve(CutoutRect(540, 0, 540, 0)).embraced)
+    }
+
+    @Test
+    fun `a generously reported round hole is tightened to the cap`() {
+        // OEMs pad the reported rect around the visual lens; the pill should hug the lens.
+        holeCap = 40
+        val geometry = resolve(CutoutRect(left = 500, top = 10, right = 580, bottom = 90))
+
+        assertTrue(geometry.embraced)
+        // Effective hole 40 + 13 margin each side, centred on the reported centre (y=50).
+        assertEquals(66f, geometry.heightPx)
+        assertEquals(17, geometry.topPx)
+        assertEquals(76f, geometry.gapPx)
+    }
+
+    @Test
+    fun `a wide dual-lens cutout is not tightened`() {
+        holeCap = 40
+        // Aspect 2.5: clearly not a circle; the cap would clip real camera glass.
+        val geometry = resolve(CutoutRect(left = 465, top = 20, right = 615, bottom = 80))
+
+        assertTrue(geometry.embraced)
+        assertEquals(60 + 26f, geometry.heightPx)
+        assertEquals(150 + 36f, geometry.gapPx)
     }
 }
