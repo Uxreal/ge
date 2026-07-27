@@ -285,7 +285,7 @@ private fun CapsulePill(
     val typography = LocalTypography.current
     val colors = MaterialTheme.colorScheme
     val density = LocalDensity.current
-    val smoothness = Superellipse.DEFAULT_SMOOTHNESS
+    val smoothness = PILL_SMOOTHNESS
 
     // The accent must survive a camera-black background whatever the theme picked.
     val accent = remember(colors.primary, card.accentArgb) {
@@ -472,7 +472,7 @@ private fun CutoutRow(
 /** A card behind the front one: the same silhouette, narrowed, peeking below the bottom edge. */
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.Shoulder(depth: Int) {
-    val smoothness = Superellipse.DEFAULT_SMOOTHNESS
+    val smoothness = PILL_SMOOTHNESS
     Box(
         modifier = Modifier
             .matchParentSize()
@@ -606,6 +606,13 @@ private val PILL_FILL = Color(0xFF000000)
 private val PILL_TEXT = Color(0xF5FFFFFF)
 private val PILL_TEXT_DIM = Color(0x9EFFFFFF)
 private val SHOULDER_FILL = Color(0xE617171B)
+
+/**
+ * The pill's own curvature, far rounder than the launcher's default n=4.6. A superellipse at 4.6
+ * reads deliberately squarish — right for icons, wrong for a capsule whose ends wrap a circular
+ * camera lens. 2.15 is a hair softer than a true stadium without ever reading as square.
+ */
+private const val PILL_SMOOTHNESS = 2.15f
 
 private const val MAX_SHOULDERS = 2
 private const val SHOULDER_INSET = 0.07f

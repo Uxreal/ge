@@ -3,7 +3,13 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.5.0 — hardware round 2. The embrace is **confirmed on the Z Flip** ("island
+Last updated: 0.6.0 — hardware round 3 ("it is better"). The drawer's default view is now an
+App Library (D32): category shelves as two columns of tiles, three direct-launch icons and a
+mini-cluster per tile, with the A–Z grid one chip away and search unchanged. The Capsule draws at
+its own n=2.15 curvature (D33) after the "island looks like a square" report. Media gained a
+main-thread-safe refresh and a once-a-minute self-heal for missed session callbacks; whether that
+was the field media failure is unknown until the diagnostics row is read on the device.
+Previously (0.5.0): hardware round 2. The embrace is **confirmed on the Z Flip** ("island
 covers camera"); on its feedback the pill is now pure pitch black with no edge stroke, collapses
 to a bare ring around the lens at rest, and **Lumen owns the top band**: the system status bar is
 hidden on the home surface (opt-out in Settings) and the launcher draws time and battery in its

@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -51,6 +53,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.lumen.launcher.core.data.apps.AppRepository
 import dev.lumen.launcher.core.data.apps.UsageRepository
 import dev.lumen.launcher.core.data.icons.IconCache
+import dev.lumen.launcher.core.data.model.AppCategory
 import dev.lumen.launcher.core.data.model.AppInfo
 import dev.lumen.launcher.core.data.model.AppKey
 import dev.lumen.launcher.core.design.icon.AppIcon
@@ -101,6 +104,31 @@ class DrawerViewModel @Inject constructor(
         return apps.value.filter { it.searchTokens.contains(q) }
             .sortedBy { !it.label.lowercase().startsWith(q) }
     }
+
+    /**
+     * The App Library grouping: apps bucketed by [AppCategory], biggest shelves first, with
+     * SYSTEM and OTHER always last — they are where the heuristic gives up, not destinations.
+     * Categories with a single app are folded into OTHER; a shelf of one is visual noise.
+     */
+    fun categorized(all: List<AppInfo>): List<Pair<AppCategory, List<AppInfo>>> {
+        val groups = all.groupBy { it.category }.toMutableMap()
+        val strays = groups.filterKeys { it != AppCategory.OTHER && it != AppCategory.SYSTEM }
+            .filterValues { it.size < 2 }
+        if (strays.isNotEmpty()) {
+            strays.keys.forEach { groups.remove(it) }
+            groups[AppCategory.OTHER] =
+                (groups[AppCategory.OTHER].orEmpty() + strays.values.flatten())
+        }
+        val tail = listOf(AppCategory.SYSTEM, AppCategory.OTHER)
+        return groups
+            .mapValues { (_, list) -> list.sortedBy { it.label.lowercase() } }
+            .toList()
+            .sortedWith(
+                compareBy<Pair<AppCategory, List<AppInfo>>> { it.first in tail }
+                    .thenByDescending { it.second.size }
+                    .thenBy { it.first.name },
+            )
+    }
 }
 
 @Composable
@@ -119,10 +147,13 @@ fun DrawerScreen(
 
     var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<AppInfo?>(null) }
+    var alphabetical by remember { mutableStateOf(false) }
+    var openCategory by remember { mutableStateOf<AppCategory?>(null) }
     LaunchedEffect(visible) {
         if (!visible) {
             query = ""
             menuFor = null
+            openCategory = null
         }
     }
 
@@ -210,33 +241,82 @@ fun DrawerScreen(
                     }
                 }
 
-                Box(modifier = Modifier.fillMaxSize()) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
-                        state = gridState,
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxSize(),
+                // View switch: the Library is the default; A–Z is one tap away. Searching
+                // overrides both with the flat filtered list.
+                if (query.isEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(bottom = 10.dp),
                     ) {
-                        itemsIndexed(filtered, key = { _, app -> app.key.flat }) { _, app ->
-                            Box(contentAlignment = Alignment.Center) {
-                                DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { menuFor = it })
-                            }
+                        ViewChip("Library", selected = !alphabetical) {
+                            alphabetical = false
+                            openCategory = null
+                        }
+                        ViewChip("A to Z", selected = alphabetical) {
+                            alphabetical = true
+                            openCategory = null
                         }
                     }
+                }
 
-                    // Fast-scroll rail (§6): drag along A–Z to jump.
-                    if (query.isEmpty() && filtered.size > 30) {
-                        IndexRail(
-                            apps = filtered,
-                            onJump = { index ->
-                                haptics.tick()
-                                scope.launch { gridState.scrollToItem(index) }
-                            },
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .fillMaxHeight(),
-                        )
+                val category = openCategory
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        query.isNotEmpty() || alphabetical -> {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(4),
+                                state = gridState,
+                                verticalArrangement = Arrangement.spacedBy(18.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                itemsIndexed(filtered, key = { _, app -> app.key.flat }) { _, app ->
+                                    Box(contentAlignment = Alignment.Center) {
+                                        DrawerAppIcon(vm, app, onLaunched = onDismiss, onMenu = { menuFor = it })
+                                    }
+                                }
+                            }
+
+                            // Fast-scroll rail (§6): drag along A–Z to jump.
+                            if (query.isEmpty() && filtered.size > 30) {
+                                IndexRail(
+                                    apps = filtered,
+                                    onJump = { index ->
+                                        haptics.tick()
+                                        scope.launch { gridState.scrollToItem(index) }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .fillMaxHeight(),
+                                )
+                            }
+                        }
+
+                        category != null -> {
+                            val members = remember(apps, category) {
+                                apps.filter { it.category == category }
+                                    .sortedBy { it.label.lowercase() }
+                            }
+                            CategoryPage(
+                                vm = vm,
+                                category = category,
+                                members = members,
+                                onBack = { openCategory = null },
+                                onLaunched = onDismiss,
+                                onMenu = { menuFor = it },
+                            )
+                        }
+
+                        else -> {
+                            val shelves = remember(apps) { vm.categorized(apps) }
+                            LibraryShelves(
+                                vm = vm,
+                                shelves = shelves,
+                                onOpen = { openCategory = it },
+                                onLaunched = onDismiss,
+                                onMenu = { menuFor = it },
+                            )
+                        }
                     }
                 }
             }
@@ -391,6 +471,212 @@ private fun DrawerAppIcon(
         onLongPress = { onMenu(app) },
     )
 }
+
+
+/** The Library's segmented switch, drawn as two quiet chips rather than a Material control. */
+@Composable
+private fun ViewChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    BasicText(
+        text = label,
+        style = typography.tileLabel.copy(
+            color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
+        ),
+        modifier = Modifier
+            .background(
+                if (selected) colors.primaryContainer else colors.surfaceVariant.copy(alpha = 0.45f),
+                MaterialTheme.shapes.large,
+            )
+            .pointerInput(label) { detectTapGestures(onTap = { onClick() }) }
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    )
+}
+
+/**
+ * The App Library (inspired by Apple's, rebuilt in Lumen's language): two columns of category
+ * tiles. Each tile launches its three most useful slots directly and opens the full shelf from
+ * the mini-cluster in the fourth — the tile is a place to *use*, not just a folder to open.
+ */
+@Composable
+private fun LibraryShelves(
+    vm: DrawerViewModel,
+    shelves: List<Pair<AppCategory, List<AppInfo>>>,
+    onOpen: (AppCategory) -> Unit,
+    onLaunched: () -> Unit,
+    onMenu: (AppInfo) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        itemsIndexed(shelves, key = { _, (category, _) -> category.name }) { _, (category, members) ->
+            CategoryTile(
+                vm = vm,
+                category = category,
+                members = members,
+                onOpen = { onOpen(category) },
+                onLaunched = onLaunched,
+                onMenu = onMenu,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryTile(
+    vm: DrawerViewModel,
+    category: AppCategory,
+    members: List<AppInfo>,
+    onOpen: () -> Unit,
+    onLaunched: () -> Unit,
+    onMenu: (AppInfo) -> Unit,
+) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    val direct = members.take(3)
+    val overflow = members.drop(3)
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            verticalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .background(colors.surfaceVariant.copy(alpha = 0.5f), MaterialTheme.shapes.extraLarge)
+                // The tile background itself opens the shelf; icons on top win their own taps.
+                .pointerInput(category) { detectTapGestures(onTap = { onOpen() }) }
+                .padding(10.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+                TileSlot(vm, direct.getOrNull(0), onLaunched, onMenu)
+                TileSlot(vm, direct.getOrNull(1), onLaunched, onMenu)
+            }
+            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+                TileSlot(vm, direct.getOrNull(2), onLaunched, onMenu)
+                if (overflow.isNotEmpty()) {
+                    MiniCluster(vm, overflow, onOpen)
+                } else {
+                    Box(Modifier.size(TILE_ICON))
+                }
+            }
+        }
+        BasicText(
+            text = category.displayName,
+            style = typography.tileLabel.copy(color = colors.onSurfaceVariant),
+            modifier = Modifier.padding(top = 5.dp),
+        )
+    }
+}
+
+/** One of the tile's direct-launch icons. Empty slots keep the geometry honest. */
+@Composable
+private fun TileSlot(
+    vm: DrawerViewModel,
+    app: AppInfo?,
+    onLaunched: () -> Unit,
+    onMenu: (AppInfo) -> Unit,
+) {
+    if (app == null) {
+        Box(Modifier.size(TILE_ICON))
+        return
+    }
+    val icon = rememberDrawerIcon(vm.iconCache, app.key, TILE_ICON)
+    AppIcon(
+        icon = icon,
+        label = app.label,
+        iconSize = TILE_ICON,
+        showLabel = false,
+        onClick = { bounds -> if (vm.launch(app.key, bounds)) onLaunched() },
+        onLongPress = { onMenu(app) },
+    )
+}
+
+/** The fourth slot: up to four tiny icons hinting at the rest of the shelf. Tap opens it. */
+@Composable
+private fun MiniCluster(vm: DrawerViewModel, overflow: List<AppInfo>, onOpen: () -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .size(TILE_ICON)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                MaterialTheme.shapes.medium,
+            )
+            .pointerInput(Unit) { detectTapGestures(onTap = { onOpen() }) }
+            .padding(5.dp),
+    ) {
+        overflow.take(4).chunked(2).forEach { rowApps ->
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                rowApps.forEach { app ->
+                    val icon = rememberDrawerIcon(vm.iconCache, app.key, MINI_ICON)
+                    AppIcon(
+                        icon = icon,
+                        label = app.label,
+                        iconSize = MINI_ICON,
+                        showLabel = false,
+                        interactive = false,
+                        onClick = {},
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One open shelf: back header, then the category's full grid. */
+@Composable
+private fun CategoryPage(
+    vm: DrawerViewModel,
+    category: AppCategory,
+    members: List<AppInfo>,
+    onBack: () -> Unit,
+    onLaunched: () -> Unit,
+    onMenu: (AppInfo) -> Unit,
+) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+        ) {
+            BasicText(
+                text = "Back",
+                style = typography.tileLabel.copy(color = colors.primary),
+                modifier = Modifier
+                    .background(colors.surfaceVariant.copy(alpha = 0.45f), MaterialTheme.shapes.large)
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onBack() }) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+            )
+            BasicText(
+                text = category.displayName,
+                style = typography.capsuleTitle.copy(color = colors.onSurface),
+            )
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            itemsIndexed(members, key = { _, app -> app.key.flat }) { _, app ->
+                Box(contentAlignment = Alignment.Center) {
+                    DrawerAppIcon(vm, app, onLaunched = onLaunched, onMenu = onMenu)
+                }
+            }
+        }
+    }
+}
+
+private val TILE_ICON = 52.dp
+private val MINI_ICON = 18.dp
 
 /** The A–Z rail. Letters map to the first app whose label starts there. */
 @Composable

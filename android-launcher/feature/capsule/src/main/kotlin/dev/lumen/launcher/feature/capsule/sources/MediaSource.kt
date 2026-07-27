@@ -44,12 +44,23 @@ internal class MediaSource(
         override fun onSessionDestroyed() = refresh()
     }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     /**
      * Re-reads the world. Called at start, whenever the launcher resumes (the user may have just
-     * granted access in system settings), when the listener service connects, and from playback
-     * callbacks. Cheap, idempotent, and a silent no-op without consent.
+     * granted access in system settings), when the listener service connects, from playback
+     * callbacks, and once a minute as a self-heal for missed callbacks (OEM listener rebinding is
+     * flaky, and a stale "nothing playing" that fixes itself within a minute beats one that
+     * needs a process restart). Cheap, idempotent, and a silent no-op without consent.
+     *
+     * Always hops to the main thread: `MediaSessionManager` listener registration needs a Looper
+     * thread, and callers should not have to know that.
      */
     fun refresh() {
+        mainHandler.post { doRefresh() }
+    }
+
+    private fun doRefresh() {
         val manager = sessionManager ?: return
         runCatching {
             if (!listening) {

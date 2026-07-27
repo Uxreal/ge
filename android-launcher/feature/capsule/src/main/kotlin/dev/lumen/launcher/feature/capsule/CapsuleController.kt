@@ -68,6 +68,12 @@ class CapsuleController @Inject constructor(
         scope.launch { runLoop() }
         sources.start(scope)
         media.refresh()
+        scope.launch {
+            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                kotlinx.coroutines.delay(60_000L)
+                media.refresh()
+            }
+        }
         ContextCompat.registerReceiver(
             context,
             pushReceiver,

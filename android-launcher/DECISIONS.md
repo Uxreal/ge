@@ -426,3 +426,30 @@ time inside the pill at rest, which duplicated the strip's clock a centimetre aw
 The identity here is carried by everything the flat-black clone lacks — the superellipse
 silhouette, the rim-as-progress, the shoulder deck, the ring-at-rest behaviour — and the colour is
 what the physical trick requires.
+
+## D32 — The drawer is an App Library, not a list
+
+**Chosen:** the FREEFORM drawer's default view is category shelves in the App Library manner
+(user-directed: "give it categories, take inspiration from apple"): two columns of tiles, each
+tile launching its first three apps directly and opening the full shelf from a mini-cluster of
+tiny icons in the fourth slot. Categories come from the manifest-declared category when a
+developer set one and the existing package-name heuristics otherwise; single-app categories fold
+into Other, and System/Other always sort last. The alphabetical grid with the A–Z rail survives
+behind a one-tap "A to Z" chip, and typing in search still overrides everything with the flat
+filtered list.
+
+**Rejected:** replacing the alphabetical grid outright (the rail is the fastest path to a known
+app and §6 asked for it), and copying Apple's layout verbatim — the tiles here are Lumen's
+superellipse surfaces on the frosted sheet, not iOS folder chrome.
+
+## D33 — The pill's curvature is not the launcher's curvature
+
+**Chosen:** everything the Capsule draws uses its own superellipse exponent n=2.15 — a hair
+softer than a true stadium — instead of the launcher-wide default n=4.6. Field report: "the
+island looks like a square, should be rounded."
+
+**Why:** n=4.6 is the token that makes icons and sheets read considered rather than default, but
+at pill scale, with the corner radius equal to half the height, a 4.6 exponent flattens the arc
+into visibly squared ends — around a *circular* camera lens, unmistakably wrong. The smoothness
+token exists to be tuned per surface; this is the first surface whose job requires the round end
+of its range.
