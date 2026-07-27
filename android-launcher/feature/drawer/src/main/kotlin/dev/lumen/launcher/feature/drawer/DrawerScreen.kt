@@ -80,8 +80,12 @@ import javax.inject.Inject
 class DrawerViewModel @Inject constructor(
     private val appRepo: AppRepository,
     private val usage: UsageRepository,
+    private val prefsRepo: dev.lumen.launcher.core.data.prefs.PrefsRepository,
     val iconCache: IconCache,
 ) : ViewModel() {
+
+    /** D38: pin an app to the dock (max five; the oldest rolls off). */
+    fun addToDock(key: AppKey) = prefsRepo.addDockKey(key.flat)
 
     val apps: StateFlow<List<AppInfo>> = appRepo.apps
 
@@ -221,7 +225,6 @@ fun DrawerScreen(
                         .padding(top = 12.dp, bottom = 10.dp)
                         .focusRequester(focus),
                 )
-                LaunchedEffect(visible) { if (visible) focus.requestFocus() }
 
                 // Suggested row (§6): usage-ranked, only while not searching.
                 val suggestions = remember(apps, query) { if (query.isEmpty()) vm.suggested(4) else emptyList() }
@@ -374,6 +377,12 @@ fun DrawerScreen(
                         menuFor = null
                         onDismiss()
                     },
+                    onAddToDock = {
+                        haptics.snap()
+                        vm.addToDock(app.key)
+                        menuFor = null
+                        onDismiss()
+                    },
                     onAppInfo = {
                         vm.appInfo(app.key)
                         menuFor = null
@@ -402,6 +411,7 @@ private fun AppActionMenu(
     canAddToHome: Boolean,
     canUninstall: Boolean,
     onAddToHome: () -> Unit,
+    onAddToDock: () -> Unit,
     onAppInfo: () -> Unit,
     onUninstall: () -> Unit,
     onDismiss: () -> Unit,
@@ -486,6 +496,7 @@ private fun AppActionMenu(
                 )
             }
             if (canAddToHome) MenuRow("Add to Home", onAddToHome)
+            MenuRow("Add to Dock", onAddToDock)
             MenuRow("App info", onAppInfo)
             if (canUninstall) MenuRow("Uninstall", onUninstall)
         }

@@ -37,6 +37,45 @@ class WallpaperCoordinator @Inject constructor(
     private val _luminance = MutableStateFlow<FloatArray?>(null)
     val luminance: StateFlow<FloatArray?> = _luminance.asStateFlow()
 
+    private val _colors = MutableStateFlow<WallpaperColorsSnapshot?>(null)
+
+    /** The wallpaper's own colours, kept live across wallpaper changes. Raw ints: `:core:data`
+     *  does not depend on `:core:design`, so the design layer maps these into its palette. */
+    val colors: StateFlow<WallpaperColorsSnapshot?> = _colors.asStateFlow()
+
+    init {
+        readColors()
+        runCatching {
+            manager?.addOnColorsChangedListener(
+                { wallpaperColors, which ->
+                    if (which and WallpaperManager.FLAG_SYSTEM != 0) {
+                        _colors.value = wallpaperColors?.toSnapshot()
+                        refresh()
+                    }
+                },
+                android.os.Handler(android.os.Looper.getMainLooper()),
+            )
+        }
+    }
+
+    private fun readColors() {
+        _colors.value = runCatching {
+            manager?.getWallpaperColors(WallpaperManager.FLAG_SYSTEM)?.toSnapshot()
+        }.getOrNull()
+    }
+
+    private fun android.app.WallpaperColors.toSnapshot() = WallpaperColorsSnapshot(
+        primary = primaryColor.toArgb(),
+        secondary = secondaryColor?.toArgb() ?: primaryColor.toArgb(),
+        tertiary = tertiaryColor?.toArgb() ?: primaryColor.toArgb(),
+        // HINT_SUPPORTS_DARK_TEXT set means the wallpaper is light enough for dark-on-light.
+        supportsDarkText = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            colorHints and android.app.WallpaperColors.HINT_SUPPORTS_DARK_TEXT != 0
+        } else {
+            false
+        },
+    )
+
     fun refresh() {
         scope.launch(Dispatchers.IO) {
             _luminance.value = runCatching { sample() }.getOrNull()
@@ -109,3 +148,11 @@ class WallpaperCoordinator @Inject constructor(
         const val GRID = 8
     }
 }
+
+/** `WallpaperManager.getWallpaperColors` distilled to plain ints for the module boundary. */
+data class WallpaperColorsSnapshot(
+    val primary: Int,
+    val secondary: Int,
+    val tertiary: Int,
+    val supportsDarkText: Boolean,
+)

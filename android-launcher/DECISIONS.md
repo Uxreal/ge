@@ -521,3 +521,23 @@ UI; "the reference" is a design target, not a name.
 **Also fixed:** the 0.8.0 tap-semantics change accidentally routed drag-down through the same
 callback as tap, so dragging the island down launched the app instead of expanding. Drag-down has
 its own callback again, and launching from an expanded card collapses the island behind it.
+
+## D38 — Wallpaper-driven colour, a dock, and a quieter drawer
+
+**Wallpaper theming.** `LumenTheme` always accepted a `WallpaperPalette`; the shell never supplied
+one, so the launcher ran on the fallback accent since Phase 1. The coordinator now reads
+`WallpaperManager.getWallpaperColors` (no permission, and live — a colours-changed listener
+re-themes without a restart) and exposes plain ints across the module boundary; the shell maps
+them into the palette. Changing wallpaper now recolours every accent, chip, menu and tile.
+
+**The dock.** Five pinned apps on a translucent superellipse bar above the page dots, constant
+across pages. Stored as `AppKey` strings in prefs rather than as grid items — the layout engine's
+reflow, PACKED's ensure-all-apps sweep and the Room schema all stay untouched, which for a
+personal build is the right trade. Pin from the drawer's long-press menu ("Add to Dock", oldest
+rolls off past five); long-press a dock icon to unpin — cheap, reversible operations do not get a
+confirmation ceremony. The grid reserves the strip only while the dock has content. In PACKED the
+app also remains on its page; the dock is a shortcut row, not a home.
+
+**The drawer keyboard.** Opening the drawer no longer auto-focuses search — the App Library is a
+browsing surface and the keyboard covered half of it on every open. Tap the field to type; Enter
+still launches the top hit.

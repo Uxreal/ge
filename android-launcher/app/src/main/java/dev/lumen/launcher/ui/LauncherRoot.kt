@@ -42,6 +42,7 @@ import dev.lumen.launcher.core.design.theme.LumenThemeConfig
 import dev.lumen.launcher.core.design.theme.LocalTypography
 import dev.lumen.launcher.core.design.theme.LumenTypography
 import dev.lumen.launcher.core.design.theme.ThemeMode
+import dev.lumen.launcher.core.design.theme.WallpaperPalette
 import dev.lumen.launcher.feature.capsule.CapsuleViewModel
 import dev.lumen.launcher.feature.capsule.ui.CapsuleHost
 import dev.lumen.launcher.feature.drawer.DrawerScreen
@@ -73,7 +74,26 @@ fun LauncherRoot(
 ) {
     val prefs by homeVm.prefs.collectAsStateWithLifecycle()
 
-    val themeConfig = remember(prefs) {
+    // The launcher recolours itself from the wallpaper (live: changing the wallpaper re-themes
+    // without a restart). LumenTheme always supported a palette; now it finally gets one.
+    val wallpaperColors by homeVm.wallpaper.colors.collectAsStateWithLifecycle()
+
+    val themeConfig = remember(prefs, wallpaperColors) {
+        val palette = wallpaperColors?.let { wp ->
+            val primary = androidx.compose.ui.graphics.Color(wp.primary)
+            WallpaperPalette(
+                primary = primary,
+                secondary = androidx.compose.ui.graphics.Color(wp.secondary),
+                tertiary = androidx.compose.ui.graphics.Color(wp.tertiary),
+                neutral = androidx.compose.ui.graphics.lerp(
+                    primary,
+                    if (wp.supportsDarkText) androidx.compose.ui.graphics.Color(0xFFF2F0EC)
+                    else androidx.compose.ui.graphics.Color(0xFF141416),
+                    0.82f,
+                ),
+                isDark = !wp.supportsDarkText,
+            )
+        }
         LumenThemeConfig(
             mode = when (prefs.themeMode) {
                 "LIGHT" -> ThemeMode.LIGHT
@@ -81,6 +101,7 @@ fun LauncherRoot(
                 "TRUE_BLACK" -> ThemeMode.TRUE_BLACK
                 else -> ThemeMode.AUTO
             },
+            palette = palette,
             typography = LumenTypography(),
             motion = MotionTokens(speed = prefs.motionSpeed, reduceMotion = prefs.reduceMotion),
             hapticIntensity = runCatching { HapticIntensity.valueOf(prefs.hapticIntensity) }

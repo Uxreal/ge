@@ -1,6 +1,7 @@
 package dev.lumen.launcher.feature.home.ui
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -193,3 +194,45 @@ internal fun EmptyHomeHint(onOpenDrawer: () -> Unit, modifier: Modifier = Modifi
         )
     }
 }
+
+/**
+ * The dock (D38): up to five pinned apps on a translucent superellipse bar, constant across
+ * pages. Tap launches; long-press removes the pin (the drawer's "Add to Dock" puts it back —
+ * cheap operations do not need a confirmation ceremony). No labels: dock apps are the ones whose
+ * icons you already know.
+ */
+@Composable
+internal fun DockBar(
+    vm: dev.lumen.launcher.feature.home.HomeViewModel,
+    apps: List<dev.lumen.launcher.core.data.model.AppInfo>,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = dev.lumen.launcher.core.design.interaction.LocalHaptics.current
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+                MaterialTheme.shapes.extraLarge,
+            )
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        apps.forEach { app ->
+            val icon = rememberAppIcon(vm.iconCache, app.key, DOCK_ICON)
+            dev.lumen.launcher.core.design.icon.AppIcon(
+                icon = icon,
+                label = app.label,
+                iconSize = DOCK_ICON,
+                showLabel = false,
+                onClick = { bounds -> vm.launch(app.key, bounds) },
+                onLongPress = {
+                    haptics.commit()
+                    vm.removeFromDock(app.key)
+                },
+            )
+        }
+    }
+}
+
+private val DOCK_ICON = 50.dp

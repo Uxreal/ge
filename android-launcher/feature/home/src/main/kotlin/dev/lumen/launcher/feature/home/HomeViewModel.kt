@@ -43,6 +43,15 @@ class HomeViewModel @Inject constructor(
     val prefs: StateFlow<PrefsSnapshot> = prefsRepo.prefs
     val apps: StateFlow<List<AppInfo>> = appRepo.apps
 
+    /** The dock (D38): stored keys resolved against installed apps; uninstalled entries drop out. */
+    fun dockApps(): List<AppInfo> {
+        val index = apps.value.associateBy { it.key.flat }
+        return prefs.value.dockKeys.mapNotNull { index[it] }
+    }
+
+    fun removeFromDock(key: dev.lumen.launcher.core.data.model.AppKey) =
+        prefsRepo.removeDockKey(key.flat)
+
     @Volatile
     private var columns = 4
 

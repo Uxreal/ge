@@ -71,6 +71,8 @@ fun HomeScreen(
 ) {
     val workspace by vm.state.collectAsStateWithLifecycle()
     val prefs by vm.prefs.collectAsStateWithLifecycle()
+    val allApps by vm.apps.collectAsStateWithLifecycle()
+    val dock = remember(allApps, prefs.dockKeys) { vm.dockApps() }
     val motion = LocalMotion.current
     val haptics = LocalHaptics.current
     val typography = LocalTypography.current
@@ -86,7 +88,7 @@ fun HomeScreen(
                 insets.calculateRightPadding(LayoutDirection.Ltr),
             verticalInsets = insets.calculateTopPadding() + insets.calculateBottomPadding(),
             reservedTop = CAPSULE_STRIP,
-            reservedBottom = INDICATOR_STRIP,
+            reservedBottom = INDICATOR_STRIP + if (dock.isEmpty()) 0.dp else DOCK_STRIP,
             isTablet = maxWidth >= 600.dp,
             spec = GridSpec(
                 columns = prefs.columns,
@@ -213,6 +215,16 @@ fun HomeScreen(
                 .align(Alignment.BottomCenter)
                 .offset(y = -insets.calculateBottomPadding()),
         )
+
+        if (dock.isNotEmpty() && drag == null) {
+            DockBar(
+                vm = vm,
+                apps = dock,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = -insets.calculateBottomPadding() - INDICATOR_STRIP),
+            )
+        }
 
         // The drawer's visible affordance: a small handle above the page dots.
         if (onOpenDrawer != null && drag == null) {
@@ -354,6 +366,7 @@ internal const val EDGE_DWELL_MS = 400L
 internal const val EDGE_REPEAT_MS = 600L
 internal val CAPSULE_STRIP = 56.dp
 internal val INDICATOR_STRIP = 28.dp
+internal val DOCK_STRIP = 66.dp
 
 /** Pixel-space geometry shared by every page and the drag layer. Coordinates are window-root. */
 internal class GridMetrics(

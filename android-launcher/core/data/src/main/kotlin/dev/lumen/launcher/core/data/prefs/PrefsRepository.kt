@@ -65,6 +65,8 @@ data class PrefsSnapshot(
     /** D30: false (default) hides the system bar on the home screen; Lumen draws time/battery. */
     val showStatusBar: Boolean,
     /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
+    /** D38: the dock, as AppKey.flat strings in order. */
+    val dockKeys: List<String>,
     val capsuleSeenPackages: List<String>,
     val capsuleBlockedPackages: List<String>,
 )
@@ -109,6 +111,17 @@ class PrefsRepository @Inject constructor(
 
     fun setShowStatusBar(show: Boolean) = update { it.showStatusBar = show }
 
+    fun addDockKey(flat: String) = update { builder ->
+        if (flat in builder.dockKeysList) return@update
+        val kept = (builder.dockKeysList + flat).takeLast(MAX_DOCK)
+        builder.clearDockKeys().addAllDockKeys(kept)
+    }
+
+    fun removeDockKey(flat: String) = update { builder ->
+        val kept = builder.dockKeysList.filterNot { it == flat }
+        builder.clearDockKeys().addAllDockKeys(kept)
+    }
+
     /** Capped so a package that renames itself in a loop cannot grow the prefs file without end. */
     fun rememberCapsulePackage(pkg: String) = update { builder ->
         if (pkg in builder.capsuleSeenPackagesList) return@update
@@ -127,6 +140,7 @@ class PrefsRepository @Inject constructor(
 
     private companion object {
         const val MAX_SEEN_PACKAGES = 64
+        const val MAX_DOCK = 5
     }
 }
 
@@ -145,6 +159,7 @@ private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
     workspaceSeeded = workspaceSeeded,
     capsuleEnabled = !capsuleOff,
     showStatusBar = showStatusBar,
+    dockKeys = dockKeysList,
     capsuleSeenPackages = capsuleSeenPackagesList,
     capsuleBlockedPackages = capsuleBlockedPackagesList,
 )

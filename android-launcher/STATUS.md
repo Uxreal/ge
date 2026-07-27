@@ -3,7 +3,12 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 0.8.1 — two silent walls found behind "most things dont work" (D37): the
+Last updated: 0.9.0 — "make it better", answered with the three biggest gaps (D38): the theme
+now derives from the wallpaper (live, no restart), a five-slot dock rides above the page dots
+(pin from the drawer menu, long-press to unpin, prefs-backed so the layout engine is untouched),
+and the drawer stops throwing the keyboard over the App Library on open. Compile-verified, 77
+tests; emulator still dead.
+Previously (0.8.1) — two silent walls found behind "most things dont work" (D37): the
 Android 14+ background-activity-launch block was eating every PendingIntent the island fired
 (tap-to-open, action chips — all silent no-ops), and Android 13+ restricted settings blocks the
 notification-access toggle for sideloaded apps, which is why media consent kept failing; Settings
