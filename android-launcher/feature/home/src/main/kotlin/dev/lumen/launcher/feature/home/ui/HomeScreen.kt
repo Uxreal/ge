@@ -88,7 +88,8 @@ fun HomeScreen(
                 insets.calculateRightPadding(LayoutDirection.Ltr),
             verticalInsets = insets.calculateTopPadding() + insets.calculateBottomPadding(),
             reservedTop = CAPSULE_STRIP,
-            reservedBottom = INDICATOR_STRIP + if (dock.isEmpty()) 0.dp else DOCK_STRIP,
+            reservedBottom = INDICATOR_STRIP +
+                if (dock.isEmpty() && onOpenDrawer == null) 0.dp else DOCK_STRIP,
             isTablet = maxWidth >= 600.dp,
             spec = GridSpec(
                 columns = prefs.columns,
@@ -216,10 +217,11 @@ fun HomeScreen(
                 .offset(y = -insets.calculateBottomPadding()),
         )
 
-        if (dock.isNotEmpty() && drag == null) {
+        if ((dock.isNotEmpty() || onOpenDrawer != null) && drag == null) {
             DockBar(
                 vm = vm,
                 apps = dock,
+                onOpenDrawer = onOpenDrawer,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .offset(y = -insets.calculateBottomPadding() - INDICATOR_STRIP),

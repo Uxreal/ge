@@ -5,12 +5,12 @@
 
 | File | What it is |
 |---|---|
-| `lumen-latest.apk` | Always the newest build. Currently identical to 1.0.0. |
-| `lumen-1.0.0-fresh.apk` | **2.9 MB, R8-minified.** Fresh install identity: the app is now `dev.lumen.launcher2`, signed with a permanent key committed to the repo, because the old package on the phone was signed by a rotated build key and could never be updated again. Installs cleanly beside the old Lumen; uninstall the old one after switching, then redo onboarding, default-home, media consent and the dock (new id = new app data). All of 0.9.x included: one shape system, wallpaper theming, dock, App Library, the island. |
+| `lumen-latest.apk` | Always the newest build. Currently identical to 1.1.0. |
+| `lumen-1.1.0-essentials.apk` | **2.9 MB, R8-minified.** The essentials: a biometric hidden shelf in the App Library (hide apps from the long-press menu; the padlock tile unlocks with fingerprint/face/PIN and re-locks when the drawer closes), an always-tappable Apps button on the dock bar, and one-time factory seeding of your phone's real default dialer/messages/browser/camera to the dock with clock and settings on the grid. Same dev.lumen.launcher2 identity and permanent key as 1.0.0 — installs over it cleanly. |
 | `lumen-0.1.1-phase1.apk` | Phase 1 only, no Capsule, unminified. The old fallback. |
 
-sha256 of `lumen-1.0.0-fresh.apk` / `lumen-latest.apk`:
-`aed5d4aebce4d58bea621131f342bc5fc61bf1a8c585dae585fa5185d41308bf`
+sha256 of `lumen-1.1.0-essentials.apk` / `lumen-latest.apk`:
+`e88267096600f4d0d1b454bc75a3c78bfe13845dac310d31bf57f9b20e6b7001`
 
 Not screenshot-verified this round: the build emulator's system_server is in a terminal ANR storm
 (host fault, documented since 0.3.0). Compile-verified with 77 unit tests passing, including two

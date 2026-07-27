@@ -28,6 +28,8 @@ message LumenPrefs {
   bool capsule_off = 17;        // inverted so the zero-value means "Capsule on"
   bool show_status_bar = 18;    // zero-value = hidden: Lumen owns the top band by default (D30)
   repeated string dock_keys = 19;  // AppKey.flat, in dock order, max 5 (D38)
+  repeated string hidden_keys = 20;  // AppKey.flat: drawer-hidden apps behind biometrics (D41)
+  bool dock_seeded = 21;             // factory basics were auto-pinned once (D41)
 }
 
 // Launch statistics for the drawer's suggested-apps row (§6).

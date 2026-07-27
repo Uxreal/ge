@@ -84,12 +84,45 @@ internal object LauncherProfiles {
  * diffing the whole world itself.
  */
 @Singleton
+/**
+ * D41: what a factory home screen carries, resolved from THIS device's actual defaults rather
+ * than hardcoded package names — the default dialer, SMS app, browser and camera for the dock,
+ * clock and settings for the grid. Anything unresolvable is simply skipped.
+ */
+private fun resolveBasics(context: Context): Pair<List<String>, List<String>> {
+    val pm = context.packageManager
+    fun of(intent: android.content.Intent): String? = runCatching {
+        pm.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo?.packageName
+    }.getOrNull()?.takeIf { it != "android" }
+
+    val dock = listOfNotNull(
+        of(android.content.Intent(android.content.Intent.ACTION_DIAL)),
+        runCatching { android.provider.Telephony.Sms.getDefaultSmsPackage(context) }.getOrNull(),
+        of(
+            android.content.Intent(
+                android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("http://example.com"),
+            ),
+        ),
+        of(android.content.Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)),
+    ).distinct()
+    val grid = listOfNotNull(
+        of(android.content.Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)),
+        "com.android.settings",
+    ).distinct().filterNot { it in dock }
+    return dock to grid
+}
+
 class AppRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val scope: CoroutineScope,
 ) {
 
     private val appContext: Context = context.applicationContext
+
+    /** (dock packages, grid packages) for D41's factory seeding. */
+    fun factoryBasics(): Pair<List<String>, List<String>> = resolveBasics(appContext)
     private val launcherApps: LauncherApps? = runCatching {
         appContext.getSystemService(LauncherApps::class.java)
     }.getOrNull()

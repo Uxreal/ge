@@ -3,7 +3,13 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 1.0.0 — fresh install identity (D40): the build key had rotated with the cloud
+Last updated: 1.1.0 — the essentials round (D41): a biometric hidden shelf in the App Library
+(framework BiometricPrompt, lock-screen-grade, re-locks on every drawer close; hiding removes an
+app from all views and the dock), an always-tappable Apps button on the dock bar (the swipe was
+unreliable in the field; the button is the door now), and one-time factory seeding — the phone's
+actual default dialer/SMS/browser/camera pinned to the dock, clock and settings on the grid,
+resolved by intent rather than hardcoded package names.
+Previously (1.0.0) — fresh install identity (D40): the build key had rotated with the cloud
 container, so nothing could update the installed dev.lumen.launcher ever again; the app is now
 dev.lumen.launcher2 (installs beside the stranded one — uninstall the old Lumen) and every build
 signs with a keystore committed to the repo, ending the breakage class. Onboarding, default-home,

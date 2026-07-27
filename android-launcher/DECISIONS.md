@@ -578,3 +578,29 @@ threat, update breakage, and that is the threat we have.
 **Unchanged on purpose:** the code namespace stays `dev.lumen.launcher` (an applicationId is an
 install identity, not a package structure), and the §4.1 push actions remain
 `dev.lumen.launcher.capsule.PUSH`/`.CLEAR` — the public API and README examples still hold.
+
+## D41 — The hidden shelf, the Apps button, and factory seeding
+
+**Hidden shelf** (user-directed, "just like the apple one"): apps hidden from the drawer's
+long-press menu vanish from every ordinary view — Library shelves, A–Z, search, Suggested — and
+collect behind a padlock tile at the end of the Library that reveals nothing about its contents.
+Opening it runs the framework `BiometricPrompt` (API 29+, so §0's pinned dependency list holds —
+no androidx.biometric needed at minSdk 30) with `BIOMETRIC_WEAK or DEVICE_CREDENTIAL`:
+fingerprint, face, PIN, pattern or password, exactly as protected as the lock screen. The shelf
+re-locks every time the drawer closes. Hiding an app also unpins it from the dock; hidden apps in
+the shelf offer Unhide. Scope note: hiding is a drawer concern — PACKED's every-app-on-a-page
+model would fight it, and FREEFORM is the daily driver here.
+
+**The Apps button**: "swiping up doesnt work most of the time but a simple tap does." The dock
+bar now always carries a trailing four-dot button in FREEFORM — the factory phones' Apps key,
+reborn — so the drawer is one guaranteed tap away. The bar shows even with nothing pinned (it is
+then just the button), the swipe and the handle remain as bonuses, and PACKED (no drawer) shows
+no button.
+
+**Factory seeding**: once ever (a prefs flag), the launcher pins the phone's *actual* defaults —
+the resolved default dialer, SMS app, browser and camera — to the dock, and puts clock and
+settings on the FREEFORM grid. Resolution is by intent (`ACTION_DIAL`, default-SMS lookup, a
+browsable http intent, the still-camera action), never by hardcoded package name, so a Samsung
+seeds Samsung apps and a Pixel seeds Google ones. Anything unresolvable is skipped silently, and
+the seeding also runs on already-set-up installs the first time they update into it — that is
+what "should automatically be on the home screen" asked for.

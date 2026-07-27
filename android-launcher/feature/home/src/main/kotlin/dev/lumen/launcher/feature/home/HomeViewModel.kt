@@ -81,6 +81,14 @@ class HomeViewModel @Inject constructor(
                         }
                     else -> Unit
                 }
+                // D41: once ever, pin the phone's factory basics — its actual default dialer,
+                // messenger, browser and camera to the dock, clock and settings to the grid —
+                // so the home screen starts the way the phone left the factory.
+                if (!p.dockSeeded && workspace.state.value.seeded && !factorySeeded) {
+                    factorySeeded = true
+                    prefsRepo.setDockSeeded()
+                    seedFactoryDefaults(model, installedApps)
+                }
             }
         }
         viewModelScope.launch {
@@ -95,6 +103,28 @@ class HomeViewModel @Inject constructor(
                 }
                 iconCache.onPackageChanged(key.packageName)
             }
+        }
+    }
+
+    @Volatile
+    private var factorySeeded = false
+
+    private fun seedFactoryDefaults(
+        model: HomeModel,
+        installed: List<AppInfo>,
+    ) {
+        fun byPackage(pkg: String) =
+            installed.firstOrNull { it.key.packageName == pkg && !it.isWorkProfile }
+
+        val (dockPackages, gridPackages) = appRepo.factoryBasics()
+        if (prefs.value.dockKeys.isEmpty()) {
+            dockPackages.mapNotNull(::byPackage).take(4).forEach { app ->
+                prefsRepo.addDockKey(app.key.flat)
+            }
+        }
+        // PACKED already carries every app; only FREEFORM needs the grid seeds.
+        if (model == HomeModel.FREEFORM) {
+            gridPackages.mapNotNull(::byPackage).forEach { app -> addToHome(app.key) }
         }
     }
 

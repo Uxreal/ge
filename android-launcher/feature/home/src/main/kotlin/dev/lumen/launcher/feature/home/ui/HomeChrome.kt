@@ -206,6 +206,8 @@ internal fun DockBar(
     vm: dev.lumen.launcher.feature.home.HomeViewModel,
     apps: List<dev.lumen.launcher.core.data.model.AppInfo>,
     modifier: Modifier = Modifier,
+    /** The always-tappable way into the drawer — swipes are a bonus, not the door (D41). */
+    onOpenDrawer: (() -> Unit)? = null,
 ) {
     val haptics = dev.lumen.launcher.core.design.interaction.LocalHaptics.current
     Row(
@@ -231,6 +233,46 @@ internal fun DockBar(
                     vm.removeFromDock(app.key)
                 },
             )
+        }
+        if (onOpenDrawer != null) {
+            val dotTint = MaterialTheme.colorScheme.onSurfaceVariant
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(DOCK_ICON)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        MaterialTheme.shapes.medium,
+                    )
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onOpenDrawer() }) }
+                    .semantics {
+                        contentDescription = "All apps"
+                        role = Role.Button
+                    },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .drawWithCache {
+                            onDrawBehind {
+                                val r = size.width * 0.11f
+                                val step = size.width / 3f
+                                for (row in 0..1) {
+                                    for (col in 0..1) {
+                                        drawCircle(
+                                            color = dotTint,
+                                            radius = r,
+                                            center = androidx.compose.ui.geometry.Offset(
+                                                step + col * step,
+                                                step + row * step,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                )
+            }
         }
     }
 }

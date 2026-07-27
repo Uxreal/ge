@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -87,6 +88,26 @@ class DrawerViewModel @Inject constructor(
     /** D38: pin an app to the dock (max five; the oldest rolls off). */
     fun addToDock(key: AppKey) = prefsRepo.addDockKey(key.flat)
 
+    /** D41: hidden apps vanish from every ordinary view and live behind the biometric shelf. */
+    fun hiddenFlats(): Set<String> = prefsRepo.prefs.value.hiddenKeys.toSet()
+
+    fun hide(key: AppKey) = prefsRepo.hideApp(key.flat)
+
+    fun unhide(key: AppKey) = prefsRepo.unhideApp(key.flat)
+
+    val prefsFlow: kotlinx.coroutines.flow.StateFlow<dev.lumen.launcher.core.data.prefs.PrefsSnapshot>
+        get() = prefsRepo.prefs
+
+    fun visible(all: List<AppInfo>): List<AppInfo> {
+        val hidden = hiddenFlats()
+        return if (hidden.isEmpty()) all else all.filterNot { it.key.flat in hidden }
+    }
+
+    fun hiddenApps(all: List<AppInfo>): List<AppInfo> {
+        val hidden = hiddenFlats()
+        return all.filter { it.key.flat in hidden }.sortedBy { it.label.lowercase() }
+    }
+
     val apps: StateFlow<List<AppInfo>> = appRepo.apps
 
     fun launch(key: AppKey, bounds: Rect?): Boolean {
@@ -102,14 +123,18 @@ class DrawerViewModel @Inject constructor(
     fun requestUninstall(key: AppKey) = appRepo.requestUninstall(key)
 
     fun suggested(limit: Int): List<AppInfo> {
+        val hidden = hiddenFlats()
         val index = apps.value.associateBy { it.key.flat }
-        return usage.suggestions(limit).mapNotNull { index[it] }
+        return usage.suggestions(limit + hidden.size).mapNotNull { index[it] }
+            .filterNot { it.key.flat in hidden }
+            .take(limit)
     }
 
     fun filter(query: String): List<AppInfo> {
         val q = query.trim().lowercase()
-        if (q.isEmpty()) return apps.value
-        return apps.value.filter { it.searchTokens.contains(q) }
+        val pool = visible(apps.value)
+        if (q.isEmpty()) return pool
+        return pool.filter { it.searchTokens.contains(q) }
             .sortedBy { !it.label.lowercase().startsWith(q) }
     }
 
@@ -157,11 +182,14 @@ fun DrawerScreen(
     var menuFor by remember { mutableStateOf<Pair<AppInfo, Rect?>?>(null) }
     var alphabetical by remember { mutableStateOf(false) }
     var openCategory by remember { mutableStateOf<AppCategory?>(null) }
+    var hiddenOpen by remember { mutableStateOf(false) }
     LaunchedEffect(visible) {
         if (!visible) {
             query = ""
             menuFor = null
             openCategory = null
+            // Closing the drawer locks the shelf again. Every open re-authenticates.
+            hiddenOpen = false
         }
     }
 
@@ -173,7 +201,9 @@ fun DrawerScreen(
     ) {
         val content: @Composable () -> Unit = {
             val apps by vm.apps.collectAsStateWithLifecycle()
-            val filtered = remember(query, apps) { vm.filter(query) }
+            val prefsSnapshot by vm.prefsFlow.collectAsStateWithLifecycle()
+            val hiddenContext = androidx.compose.ui.platform.LocalContext.current
+            val filtered = remember(query, apps, prefsSnapshot.hiddenKeys) { vm.filter(query) }
             val gridState = rememberLazyGridState()
             val focus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
@@ -269,6 +299,17 @@ fun DrawerScreen(
                 val category = openCategory
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
+                        hiddenOpen -> {
+                            val members = remember(apps, prefsSnapshot.hiddenKeys) { vm.hiddenApps(apps) }
+                            HiddenPage(
+                                vm = vm,
+                                members = members,
+                                onBack = { hiddenOpen = false },
+                                onLaunched = onDismiss,
+                                onMenu = { a, r -> menuFor = a to r },
+                            )
+                        }
+
                         query.isNotEmpty() || alphabetical -> {
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(4),
@@ -300,8 +341,8 @@ fun DrawerScreen(
                         }
 
                         category != null -> {
-                            val members = remember(apps, category) {
-                                apps.filter { it.category == category }
+                            val members = remember(apps, category, prefsSnapshot.hiddenKeys) {
+                                vm.visible(apps).filter { it.category == category }
                                     .sortedBy { it.label.lowercase() }
                             }
                             CategoryPage(
@@ -315,11 +356,17 @@ fun DrawerScreen(
                         }
 
                         else -> {
-                            val shelves = remember(apps) { vm.categorized(apps) }
+                            val shelves = remember(apps, prefsSnapshot.hiddenKeys) { vm.categorized(vm.visible(apps)) }
                             LibraryShelves(
                                 vm = vm,
                                 shelves = shelves,
+                                hasHidden = prefsSnapshot.hiddenKeys.isNotEmpty(),
                                 onOpen = { openCategory = it },
+                                onOpenHidden = {
+                                    authenticateHidden(hiddenContext) { ok ->
+                                        if (ok) hiddenOpen = true
+                                    }
+                                },
                                 onLaunched = onDismiss,
                                 onMenu = { a, r -> menuFor = a to r },
                             )
@@ -365,10 +412,17 @@ fun DrawerScreen(
             }
 
             menuFor?.let { (app, anchor) ->
+                val isHidden = app.key.flat in vm.hiddenFlats()
                 AppActionMenu(
                     app = app,
                     anchor = anchor,
                     icon = rememberDrawerIcon(vm.iconCache, app.key, 40.dp),
+                    hidden = isHidden,
+                    onToggleHidden = {
+                        haptics.commit()
+                        if (isHidden) vm.unhide(app.key) else vm.hide(app.key)
+                        menuFor = null
+                    },
                     canAddToHome = onAddToHome != null,
                     canUninstall = vm.canUninstall(app.key),
                     onAddToHome = {
@@ -408,6 +462,8 @@ private fun AppActionMenu(
     app: AppInfo,
     anchor: Rect?,
     icon: androidx.compose.ui.graphics.ImageBitmap?,
+    hidden: Boolean,
+    onToggleHidden: () -> Unit,
     canAddToHome: Boolean,
     canUninstall: Boolean,
     onAddToHome: () -> Unit,
@@ -446,7 +502,7 @@ private fun AppActionMenu(
         val maxWpx = constraints.maxWidth
         val maxHpx = constraints.maxHeight
         // Rows are ~48dp; header ~64dp. Close enough for the above/below decision.
-        val rows = 1 + (if (canAddToHome) 1 else 0) + 1 + (if (canUninstall) 1 else 0)
+        val rows = 2 + (if (canAddToHome) 1 else 0) + 1 + (if (canUninstall) 1 else 0)
         val estHeightPx = with(density) { (64.dp + 48.dp * (rows - 1)).roundToPx() }
 
         val offset = if (anchor != null) {
@@ -495,8 +551,9 @@ private fun AppActionMenu(
                     style = typography.capsuleTitle.copy(color = colors.onSurface),
                 )
             }
-            if (canAddToHome) MenuRow("Add to Home", onAddToHome)
-            MenuRow("Add to Dock", onAddToDock)
+            if (canAddToHome && !hidden) MenuRow("Add to Home", onAddToHome)
+            if (!hidden) MenuRow("Add to Dock", onAddToDock)
+            MenuRow(if (hidden) "Unhide" else "Hide", onToggleHidden)
             MenuRow("App info", onAppInfo)
             if (canUninstall) MenuRow("Uninstall", onUninstall)
         }
@@ -581,7 +638,9 @@ private fun ViewChip(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun LibraryShelves(
     vm: DrawerViewModel,
     shelves: List<Pair<AppCategory, List<AppInfo>>>,
+    hasHidden: Boolean,
     onOpen: (AppCategory) -> Unit,
+    onOpenHidden: () -> Unit,
     onLaunched: () -> Unit,
     onMenu: (AppInfo, Rect?) -> Unit,
 ) {
@@ -600,6 +659,112 @@ private fun LibraryShelves(
                 onLaunched = onLaunched,
                 onMenu = onMenu,
             )
+        }
+        if (hasHidden) {
+            itemsIndexed(listOf("hidden"), key = { _, it -> it }) { _, _ ->
+                HiddenTile(onOpen = onOpenHidden)
+            }
+        }
+    }
+}
+
+/**
+ * D41's shelf, in the reference manner: it shows nothing about its contents — no icons, no
+ * count — just a padlock. Opening it runs the lock-screen-grade prompt every time.
+ */
+@Composable
+private fun HiddenTile(onOpen: () -> Unit) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .background(colors.surfaceVariant.copy(alpha = 0.32f), MaterialTheme.shapes.extraLarge)
+                .pointerInput(Unit) { detectTapGestures(onTap = { onOpen() }) },
+        ) {
+            val lockTint = colors.onSurfaceVariant
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .drawWithCache {
+                        onDrawBehind {
+                            val w = size.width
+                            val bodyH = w * 0.52f
+                            val bodyTop = size.height - bodyH
+                            val stroke = w * 0.10f
+                            drawRoundRect(
+                                color = lockTint,
+                                topLeft = androidx.compose.ui.geometry.Offset(0f, bodyTop),
+                                size = androidx.compose.ui.geometry.Size(w, bodyH),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.18f),
+                            )
+                            drawArc(
+                                color = lockTint,
+                                startAngle = 180f,
+                                sweepAngle = 180f,
+                                useCenter = false,
+                                topLeft = androidx.compose.ui.geometry.Offset(w * 0.18f, 0f),
+                                size = androidx.compose.ui.geometry.Size(w * 0.64f, bodyTop * 1.6f),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+                            )
+                        }
+                    },
+            )
+        }
+        BasicText(
+            text = "Hidden",
+            style = typography.tileLabel.copy(color = colors.onSurfaceVariant),
+            modifier = Modifier.padding(top = 5.dp),
+        )
+    }
+}
+
+/** The unlocked shelf: back header plus the hidden apps, whose menus offer Unhide. */
+@Composable
+private fun HiddenPage(
+    vm: DrawerViewModel,
+    members: List<AppInfo>,
+    onBack: () -> Unit,
+    onLaunched: () -> Unit,
+    onMenu: (AppInfo, Rect?) -> Unit,
+) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+        ) {
+            BasicText(
+                text = "Back",
+                style = typography.tileLabel.copy(color = colors.primary),
+                modifier = Modifier
+                    .background(colors.surfaceVariant.copy(alpha = 0.45f), MaterialTheme.shapes.large)
+                    .pointerInput(Unit) { detectTapGestures(onTap = { onBack() }) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+            )
+            BasicText(
+                text = "Hidden",
+                style = typography.capsuleTitle.copy(color = colors.onSurface),
+            )
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            itemsIndexed(members, key = { _, app -> app.key.flat }) { _, app ->
+                Box(contentAlignment = Alignment.Center) {
+                    DrawerAppIcon(vm, app, onLaunched = onLaunched, onMenu = onMenu)
+                }
+            }
         }
     }
 }

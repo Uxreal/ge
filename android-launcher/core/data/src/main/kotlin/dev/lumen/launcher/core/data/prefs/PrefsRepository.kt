@@ -66,6 +66,9 @@ data class PrefsSnapshot(
     val showStatusBar: Boolean,
     /** D38: the dock, as AppKey.flat strings in order. */
     val dockKeys: List<String>,
+    /** D41: apps hidden from every drawer view, revealed only behind the biometric shelf. */
+    val hiddenKeys: List<String>,
+    val dockSeeded: Boolean,
     /** §4.1: packages that have ever pushed a Capsule card, so settings can list them. */
     val capsuleSeenPackages: List<String>,
     val capsuleBlockedPackages: List<String>,
@@ -122,6 +125,20 @@ class PrefsRepository @Inject constructor(
         builder.clearDockKeys().addAllDockKeys(kept)
     }
 
+    fun hideApp(flat: String) = update { builder ->
+        if (flat !in builder.hiddenKeysList) builder.addHiddenKeys(flat)
+        // A hidden app has no business staying on the dock.
+        val kept = builder.dockKeysList.filterNot { it == flat }
+        builder.clearDockKeys().addAllDockKeys(kept)
+    }
+
+    fun unhideApp(flat: String) = update { builder ->
+        val kept = builder.hiddenKeysList.filterNot { it == flat }
+        builder.clearHiddenKeys().addAllHiddenKeys(kept)
+    }
+
+    fun setDockSeeded() = update { it.dockSeeded = true }
+
     /** Capped so a package that renames itself in a loop cannot grow the prefs file without end. */
     fun rememberCapsulePackage(pkg: String) = update { builder ->
         if (pkg in builder.capsuleSeenPackagesList) return@update
@@ -160,6 +177,8 @@ private fun LumenPrefs.toSnapshot() = PrefsSnapshot(
     capsuleEnabled = !capsuleOff,
     showStatusBar = showStatusBar,
     dockKeys = dockKeysList,
+    hiddenKeys = hiddenKeysList,
+    dockSeeded = dockSeeded,
     capsuleSeenPackages = capsuleSeenPackagesList,
     capsuleBlockedPackages = capsuleBlockedPackagesList,
 )
