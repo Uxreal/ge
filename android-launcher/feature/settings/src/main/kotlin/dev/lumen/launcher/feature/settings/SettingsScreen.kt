@@ -97,6 +97,8 @@ fun SettingsScreen(
     onCapsuleTest: (() -> Unit)? = null,
     /** Live one-liner from the media source; falls back to a static summary when null. */
     capsuleMediaStatus: (() -> String)? = null,
+    /** Re-runs the D41 factory seeding: pins missing basics to the dock, adds grid seeds. */
+    onApplyFactoryLayout: (() -> Unit)? = null,
 ) {
     val motion = LocalMotion.current
     val typography = LocalTypography.current
@@ -146,6 +148,19 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item { SectionTitle("Home") }
+                if (onApplyFactoryLayout != null) {
+                    item {
+                        ActionRow(
+                            title = "Apply factory layout",
+                            summary = "Pins your phone's default dialer, messages, browser and " +
+                                "camera to the dock and puts clock and settings on the grid. " +
+                                "Never duplicates what is already there.",
+                        ) {
+                            onApplyFactoryLayout()
+                            onDismiss()
+                        }
+                    }
+                }
                 item {
                     ChoiceRow(
                         title = "Home model",

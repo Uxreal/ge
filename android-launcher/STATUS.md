@@ -3,7 +3,14 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 1.1.0 — the essentials round (D41): a biometric hidden shelf in the App Library
+Last updated: 1.1.1 — the on-screen fix (D42): "the home screen apps are not on the screen"
+was factory seeding placing clock/settings with the default 4×5 grid before the real (shorter)
+grid had been measured — FREEFORM then faithfully never moved them back into view. Seeding now
+waits for the measured grid, a reclaim pass moves any item stranded outside the live bounds to
+the first free cell on every layout (heals already-affected installs on update, widgets exempt,
+in-bounds items never move), and Settings → Home gained "Apply factory layout" to re-run the
+seeding on demand. Three new layout-engine tests cover the reclaim.
+Previously (1.1.0) — the essentials round (D41): a biometric hidden shelf in the App Library
 (framework BiometricPrompt, lock-screen-grade, re-locks on every drawer close; hiding removes an
 app from all views and the dock), an always-tappable Apps button on the dock bar (the swipe was
 unreliable in the field; the button is the door now), and one-time factory seeding — the phone's

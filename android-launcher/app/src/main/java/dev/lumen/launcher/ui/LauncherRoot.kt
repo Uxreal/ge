@@ -272,6 +272,7 @@ fun LauncherRoot(
                     capsuleDiagnostic = capsuleGeometryDesc,
                     onCapsuleTest = { capsuleVm.pushTestCard() },
                     capsuleMediaStatus = { capsuleVm.mediaStatus() },
+                    onApplyFactoryLayout = { homeVm.applyFactoryLayout() },
                 )
 
                 WidgetPickerSheet(

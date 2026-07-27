@@ -604,3 +604,28 @@ browsable http intent, the still-camera action), never by hardcoded package name
 seeds Samsung apps and a Pixel seeds Google ones. Anything unresolvable is skipped silently, and
 the seeding also runs on already-set-up installs the first time they update into it — that is
 what "should automatically be on the home screen" asked for.
+
+## D42 — Seeding waits for the measured grid, and stranded items are reclaimed
+
+**Context:** "the home screen apps are not on the screen." Factory seeding (D41) ran during
+ViewModel init and placed grid items with `addToHome`, which uses whatever columns/rows it knows
+*at that moment* — the 4×5 defaults, because the composed grid had not yet reported its real
+dimensions. On the Flip, the dock strip and Capsule band leave fewer visible rows, so clock and
+settings were persisted at a row that does not exist on screen, and FREEFORM's prime directive —
+never move what is placed — faithfully kept them stranded forever.
+
+**Chosen, in three layers:**
+1. *Gate:* seeding now waits for the first real layout pass (`dimensionsReady` joins the seeding
+   condition), so new installs always seed onto the measured grid, never the assumed one.
+2. *Self-heal:* `LayoutEngine.reclaimOffGrid` runs whenever the measured grid arrives in
+   FREEFORM — any 1×1 item persisted outside the live bounds is moved to the first free in-bounds
+   cell (overflowing to a new page when full). In-bounds items never move; widgets are exempt
+   (host-managed, spans are their own problem). This heals installs already stranded by the bug,
+   and any future stranding cause — a column-count change, a future font-scale change — for free.
+3. *A door:* Settings → Home → "Apply factory layout" re-runs the seeding on demand, topping up
+   the dock (never duplicating pins) and re-adding clock/settings if absent — for anyone who
+   dismissed or lost the first seeding.
+
+**Rejected:** clamping stray cells into bounds in the repository on load (hides the bug class and
+can silently stack items); making seeding retry on a timer (a gate is deterministic, a timer is a
+race with extra steps).

@@ -275,6 +275,48 @@ class LayoutEngineTest {
         assertEquals(state, LayoutEngine.appendApp(state, key("fresh"), cols, rows))
     }
 
+    // ------------------------------------------------------------------ off-grid reclaim (D42)
+
+    @Test
+    fun `an item stranded outside the live grid is reclaimed to a free cell`() {
+        // Seeded on an assumed 5-row grid; the real grid turns out to be 4x4.
+        val stranded = app("stranded", 0, Cell(0, 4))
+        val placed = app("placed", 0, Cell(1, 1))
+        val state = WorkspaceState(items = listOf(stranded, placed), pageCount = 1, seeded = true)
+
+        val next = LayoutEngine.reclaimOffGrid(state, columns = 4, rows = 4)
+
+        val healed = next.find("stranded")!!
+        assertTrue(healed.cell.x < 4 && healed.cell.y < 4)
+        // The in-bounds item never moves — FREEFORM's contract holds even during a rescue.
+        assertEquals(Cell(1, 1), next.find("placed")!!.cell)
+    }
+
+    @Test
+    fun `reclaim is a no-op when everything already fits`() {
+        val a = app("a", 0, Cell(0, 3))
+        val b = app("b", 0, Cell(3, 0))
+        val state = WorkspaceState(items = listOf(a, b), pageCount = 1, seeded = true)
+
+        assertEquals(state, LayoutEngine.reclaimOffGrid(state, columns = 4, rows = 4))
+    }
+
+    @Test
+    fun `reclaim leaves widgets alone and overflows to a new page when full`() {
+        val widget = WidgetItem("w", 0, Cell(0, 6, 2, 2), appWidgetId = 3, providerFlat = "p/w")
+        val filled = (0 until 4).map { app("f$it", 0, LayoutEngine.cellAtFlowIndex(it, 2, 2)) }
+        val stranded = app("stranded", 0, Cell(0, 5))
+        val state = WorkspaceState(items = filled + widget + stranded, pageCount = 1, seeded = true)
+
+        val next = LayoutEngine.reclaimOffGrid(state, columns = 2, rows = 2)
+
+        // Widgets are host-managed; a resize rescue must not touch them.
+        assertEquals(Cell(0, 6, 2, 2), next.items.filterIsInstance<WidgetItem>().single().cell)
+        // Page 0 is full of in-bounds apps, so the stranded one lands on a fresh page.
+        assertEquals(1, next.find("stranded")!!.page)
+        assertEquals(2, next.pageCount)
+    }
+
     // ------------------------------------------------------------------ misc
 
     @Test

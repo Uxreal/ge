@@ -67,8 +67,13 @@ class HomeViewModel @Inject constructor(
         // Also self-heals: a PACKED workspace that somehow persisted empty re-fills from installed
         // apps instead of greeting the user with bare wallpaper.
         viewModelScope.launch {
-            combine(prefsRepo.prefs, appRepo.apps, workspace.ready) { p, apps, ready ->
-                Triple(p, apps, ready)
+            combine(
+                prefsRepo.prefs,
+                appRepo.apps,
+                workspace.ready,
+                dimensionsReady,
+            ) { p, apps, ready, dims ->
+                Triple(p, apps, ready && dims)
             }.collect { (p, installedApps, ready) ->
                 val model = p.homeModel ?: return@collect
                 if (installedApps.isEmpty() || !ready) return@collect
@@ -109,6 +114,21 @@ class HomeViewModel @Inject constructor(
     @Volatile
     private var factorySeeded = false
 
+    /**
+     * True once the composed grid has reported its real column/row counts. Anything that PLACES
+     * items must wait for it: the 1.1.0 factory seeding ran against the 4×5 defaults, and on a
+     * screen whose grid resolves shorter, the seeded items landed on rows that do not exist —
+     * "the home screen apps are not on the screen", exactly.
+     */
+    private val dimensionsReady = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    /** Settings → "Apply factory layout": the on-demand version of the one-time seeding. */
+    fun applyFactoryLayout() {
+        factorySeeded = true
+        prefsRepo.setDockSeeded()
+        seedFactoryDefaults(model, appRepo.apps.value)
+    }
+
     private fun seedFactoryDefaults(
         model: HomeModel,
         installed: List<AppInfo>,
@@ -117,12 +137,13 @@ class HomeViewModel @Inject constructor(
             installed.firstOrNull { it.key.packageName == pkg && !it.isWorkProfile }
 
         val (dockPackages, gridPackages) = appRepo.factoryBasics()
-        if (prefs.value.dockKeys.isEmpty()) {
-            dockPackages.mapNotNull(::byPackage).take(4).forEach { app ->
-                prefsRepo.addDockKey(app.key.flat)
-            }
-        }
-        // PACKED already carries every app; only FREEFORM needs the grid seeds.
+        val pinned = prefs.value.dockKeys.toSet()
+        dockPackages.mapNotNull(::byPackage)
+            .filterNot { it.key.flat in pinned }
+            .take((4 - pinned.size).coerceAtLeast(0))
+            .forEach { app -> prefsRepo.addDockKey(app.key.flat) }
+        // PACKED already carries every app; only FREEFORM needs the grid seeds. addToHome
+        // dedupes, so re-applying never duplicates.
         if (model == HomeModel.FREEFORM) {
             gridPackages.mapNotNull(::byPackage).forEach { app -> addToHome(app.key) }
         }
@@ -142,9 +163,14 @@ class HomeViewModel @Inject constructor(
         val changed = this.columns != columns || this.rows != rows
         this.columns = columns
         this.rows = rows
+        dimensionsReady.value = true
         if (changed && model == HomeModel.PACKED && workspace.state.value.seeded) {
             // A column-count change re-derives every flowing position; FREEFORM items stay put.
             workspace.mutate { LayoutEngine.compact(it, columns, rows) }
+        }
+        if (model == HomeModel.FREEFORM && workspace.state.value.seeded) {
+            // Self-heal: rescue anything a past bug or a shrunken grid left outside the screen.
+            workspace.mutate { LayoutEngine.reclaimOffGrid(it, columns, rows) }
         }
     }
 

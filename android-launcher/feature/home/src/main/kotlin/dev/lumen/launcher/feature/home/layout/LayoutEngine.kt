@@ -430,6 +430,35 @@ object LayoutEngine {
     fun seedFreeform(): WorkspaceState = WorkspaceState(items = emptyList(), pageCount = 1, seeded = true)
 
     /**
+     * Re-places 1×1 items whose cell lies outside the live grid. FREEFORM's invariant is "never
+     * move what the user placed" — but an item at a row the screen does not have is not placed,
+     * it is lost (the 1.1.0 factory-seeding bug put items there by using default dimensions
+     * before the first layout pass). Widgets are left alone; they carry their own
+     * needs-attention path.
+     */
+    fun reclaimOffGrid(state: WorkspaceState, columns: Int, rows: Int): WorkspaceState {
+        val stray = state.items.filter { item ->
+            item !is WidgetItem && (item.cell.x >= columns || item.cell.y >= rows)
+        }
+        if (stray.isEmpty()) return state
+        var current = state.copy(items = state.items - stray.toSet())
+        for (item in stray) {
+            var page = 0
+            var cell: Cell? = null
+            while (page < current.pageCount && cell == null) {
+                cell = firstFree(current, page, columns, rows)
+                if (cell == null) page += 1
+            }
+            val target = cell ?: cellAtFlowIndex(0, columns, rows)
+            current = current.copy(
+                items = current.items + item.at(page, target),
+                pageCount = maxOf(current.pageCount, page + 1),
+            )
+        }
+        return current
+    }
+
+    /**
      * §5: models are switchable without data loss. To `PACKED`, every installed app must be on a
      * page, so missing ones append in flow order; to `FREEFORM` nothing changes — positions survive
      * verbatim and the drawer simply exists again.
