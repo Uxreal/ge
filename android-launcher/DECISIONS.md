@@ -659,3 +659,33 @@ recomputed from the authoritative list on each event); badge counts on the dot (
 glance into a todo list; iOS-style dots are calmer and honest about what Lumen reads); an
 accessibility service for the shade (heavyweight, and its consent screen implies far more access
 than a shade swipe warrants).
+
+## D44 — The lifeline: crash-loop safe mode and a trace that always escapes
+
+**Context:** "it crashes on launch" on 1.2.0, on the hardware. The 1.2.0 diff reviews clean —
+everything new at process start is guarded — and the build environment lost its emulator
+(no KVM in the container), so the crash cannot be reproduced here. The existing crash card
+(0.x era) only helps if the launcher lives long enough to compose a frame; a crash during
+composition loops forever and the trace stays trapped in `filesDir`.
+
+**Chosen — make the field debuggable and the launcher unkillable, then fix the root cause from
+the real trace:**
+1. *The trace always escapes:* the uncaught-exception handler now also drops the log into the
+   system Downloads collection (`lumen-crash-<epoch>.txt`, MediaStore, no permission at this
+   minSdk, throttled to ~one file a minute) — readable from the Files app with no working
+   launcher at all. Entries now carry the app version.
+2. *Safe mode:* Application.onCreate counts consecutive boots that never reached ten stable
+   seconds (SharedPreferences with synchronous commit — the next instruction may be the crash).
+   Two dead boots later, the third comes up safe: Capsule down, system status bar up,
+   notification listener silent. A banner says so, offers the crash log, and offers "Try full
+   mode" (reset + process restart). A safe boot does NOT clear the counter — no autonomous
+   crash-safe-crash cycle.
+3. *Armor at process start:* workspace preload, wallpaper refresh and capsule start are each
+   individually guarded, recording non-fatal notes to the crash file instead of dying. Every
+   notification-listener callback is wrapped whole — the listener shares the launcher's process,
+   so its exceptions are launcher crashes.
+
+**Rejected:** blind-reverting D43 (the diff reviews clean, and reverting without a trace throws
+away the features without proving anything); asking the user to run adb (they install APKs from
+a link; logcat is not a reasonable ask); shipping a diagnostic-only build with features off
+(safe mode gives the same guarantee only when it is actually needed).

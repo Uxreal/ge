@@ -74,6 +74,14 @@ fun LauncherRoot(
 ) {
     val prefs by homeVm.prefs.collectAsStateWithLifecycle()
 
+    // D44: a safe-mode boot keeps the Capsule down and the system bar up so the launcher always
+    // opens; ten stable seconds of a full-mode boot clears the crash counter.
+    val safeMode = remember { dev.lumen.launcher.core.data.system.SafeMode.active }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(10_000)
+        dev.lumen.launcher.core.data.system.SafeMode.confirmAlive(activity)
+    }
+
     // The launcher recolours itself from the wallpaper (live: changing the wallpaper re-themes
     // without a restart). LumenTheme always supported a palette; now it finally gets one.
     val wallpaperColors by homeVm.wallpaper.colors.collectAsStateWithLifecycle()
@@ -120,7 +128,8 @@ fun LauncherRoot(
         // (a top-edge swipe still summons it and the shade transiently) and the Capsule's strip
         // draws time and battery instead. This also hands the pill's touches back to the app:
         // a visible system bar consumes every tap in its band, which made the docked pill inert.
-        val ownTop = prefs.capsuleEnabled && !prefs.showStatusBar && prefs.onboardingDone
+        val ownTop = prefs.capsuleEnabled && !prefs.showStatusBar && prefs.onboardingDone &&
+            !safeMode
         LaunchedEffect(ownTop) {
             val controller = androidx.core.view.WindowCompat.getInsetsController(activity.window, view)
             controller.systemBarsBehavior =
@@ -234,7 +243,7 @@ fun LauncherRoot(
                 // It docks on the camera cutout and positions itself, so no inset padding here —
                 // padding would push it off the hole it exists to swallow. Hidden whenever a
                 // full-screen lens, onboarding, or wiggle mode's chip bar owns the display.
-                if (prefs.capsuleEnabled && prefs.onboardingDone &&
+                if (prefs.capsuleEnabled && prefs.onboardingDone && !safeMode &&
                     overlay == Overlay.NONE && !homeState.editMode
                 ) {
                     val deck by capsuleVm.deck.collectAsStateWithLifecycle()
@@ -311,6 +320,22 @@ fun LauncherRoot(
                     )
                 }
 
+                // D44: repeated boot deaths landed us here with the Capsule down. Say so, offer
+                // the trace, and offer the way back to full mode.
+                if (safeMode) {
+                    SafeModeBanner(
+                        onShare = { CrashLog.share(activity) },
+                        onTryFullMode = {
+                            dev.lumen.launcher.core.data.system.SafeMode
+                                .exitSafeModeAndRestart(activity)
+                        },
+                        modifier = Modifier
+                            .align(androidx.compose.ui.Alignment.TopCenter)
+                            .safeDrawingPadding()
+                            .padding(top = 54.dp),
+                    )
+                }
+
                 // If the previous run died, say so and hand over the trace. Field debugging
                 // depends on this card existing — "it does not load" carries no stack trace.
                 var crashText by remember { mutableStateOf(CrashLog.read(activity)) }
@@ -381,6 +406,42 @@ private fun CrashCard(
         Row {
             TextButton(onClick = onShare) { Text("Share log") }
             TextButton(onClick = onDismiss) { Text("Dismiss") }
+        }
+    }
+}
+
+/**
+ * D44: the launcher opened, but only because the crash-loop breaker turned the Capsule off.
+ * Honest about the state, one tap to the trace, one tap back to full mode.
+ */
+@Composable
+private fun SafeModeBanner(
+    onShare: () -> Unit,
+    onTryFullMode: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val typography = LocalTypography.current
+    val colors = MaterialTheme.colorScheme
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(colors.errorContainer, MaterialTheme.shapes.large)
+            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        BasicText(
+            text = "Safe mode",
+            style = typography.capsuleTitle.copy(color = colors.onErrorContainer),
+        )
+        BasicText(
+            text = "Lumen crashed repeatedly, so the Capsule is off for this run. " +
+                "Share the crash log so the bug can be fixed.",
+            style = typography.tileLabel.copy(color = colors.onErrorContainer),
+        )
+        Row {
+            TextButton(onClick = onShare) { Text("Share crash log") }
+            TextButton(onClick = onTryFullMode) { Text("Try full mode") }
         }
     }
 }

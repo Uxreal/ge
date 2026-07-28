@@ -3,7 +3,15 @@
 Honest state of the build. A phase is only "done" when every acceptance criterion in §13 passes and
 has been *measured*, not argued.
 
-Last updated: 1.2.0 — the polish round (D43), for "better, make it perfect": swipe down
+Last updated: 1.2.1 — the lifeline (D44), answering "it crashes on launch" on 1.2.0 without a
+reproducible trace (the diff reviews clean; the container lost its emulator to missing KVM):
+crashes now export the stack trace to the phone's Downloads folder at death (no working launcher
+needed to read it), two dead boots flip the third into safe mode (Capsule down, status bar up,
+listener silent, banner with "Share crash log" / "Try full mode"), and everything at process
+start is individually guarded with non-fatal notes. The root cause gets fixed from the real
+trace; this build makes sure it arrives — and that the phone's Home button always works
+meanwhile. 1.2.0's polish features are unchanged and hardened, not reverted.
+Previously (1.2.0) — the polish round (D43), for "better, make it perfect": swipe down
 anywhere on home now opens the notification shade (the missing everyday gesture, doubly needed
 with the status bar hidden), notification dots light the corner of icons on the grid, dock,
 folders and drawer (same consent as media; Lumen reads only which app posted, never content;

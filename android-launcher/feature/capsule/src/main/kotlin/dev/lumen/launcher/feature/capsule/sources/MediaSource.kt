@@ -210,6 +210,9 @@ class CapsuleNotificationListener : NotificationListenerService() {
     }
 
     override fun onListenerConnected() {
+        // D44: the listener shares the launcher's process, so a throw anywhere in here kills the
+        // home screen — every callback is wrapped whole, and safe mode silences the lot.
+        if (dev.lumen.launcher.core.data.system.SafeMode.active) return
         // The user just flipped the toggle in system settings; media can start flowing now.
         runCatching {
             EntryPointAccessors
@@ -217,18 +220,22 @@ class CapsuleNotificationListener : NotificationListenerService() {
                 .capsuleController()
                 .refreshMedia()
         }
-        publishDots()
+        runCatching { publishDots() }
     }
 
     override fun onListenerDisconnected() {
-        publish(emptySet())
+        runCatching { publish(emptySet()) }
     }
 
-    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) =
-        publishDots()
+    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) {
+        if (dev.lumen.launcher.core.data.system.SafeMode.active) return
+        runCatching { publishDots() }
+    }
 
-    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) =
-        publishDots()
+    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) {
+        if (dev.lumen.launcher.core.data.system.SafeMode.active) return
+        runCatching { publishDots() }
+    }
 
     /**
      * Recomputed from [getActiveNotifications] every time rather than kept as deltas: the system's

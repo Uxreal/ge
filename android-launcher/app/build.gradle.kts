@@ -12,8 +12,8 @@ android {
         // signed with a build key this machine no longer has, so updates to it can never install
         // again; a new id side-steps the corpse. Uninstall the old Lumen after switching.
         applicationId = "dev.lumen.launcher2"
-        versionCode = 17
-        versionName = "1.2.0-polish"
+        versionCode = 18
+        versionName = "1.2.1-lifeline"
         vectorDrawables { useSupportLibrary = true }
     }
 
